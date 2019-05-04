@@ -92,8 +92,10 @@ def Stacking(data_tmp,wcs,image_data,rms_data,inputvmin,inputvmax):
     print 'len(data_tmp.filled()) ',len(data_tmp.filled())
    
     picnum = 1
-    
-    rnds = random.sample(range(0, len(data_tmp.filled())), 9) 
+    if len(data_tmp.filled())>8:
+        rnds = random.sample(range(0, len(data_tmp.filled())), 9)
+    else:
+        rnds = random.sample(range(0, len(data_tmp.filled())), len(data_tmp.filled()))
     print rnds
     cut_num = 0
     for i in range( len(data_tmp.filled()) ):
@@ -200,10 +202,12 @@ def OnePointStacking(data_tmp,wcs,image_data,rms_data,inputradius,inputra,inputd
     return middlepix, randompix, random_ra_list, random_dec_list
 
 def PlotOnePointStackingHist(inputmiddlepix,inputrandompix,inputN):
-    plt.hist(inputrandompix, inputN)
+    plt.hist(inputrandompix, inputN,color='C1')
     plt.title(IMAGE_NAME+': '+r'$\mu$:'+str("%.4f" % (inputmiddlepix))+'\n'\
               +r'$\mu$:'+str("%.4f" % (np.mean(inputrandompix)))+'mJy/beam, $\sigma$: '\
-              +str("%.4f" % (np.std(inputrandompix)))+'mJy/beam')
+              +str("%.4f" % (np.std(inputrandompix)))+'mJy/beam\n'\
+              +'SNR: '+str("%.4f" % ((inputmiddlepix-np.mean(inputrandompix))/np.std(inputrandompix)))\
+              +' sigma')
 
 def PlotRandomPos(inputrandom_ra_list,inputrandom_dec_list):
     plt.scatter(inputrandom_ra_list,inputrandom_dec_list,s=0.1)
@@ -271,7 +275,7 @@ time1 = time.time()
 
 number = 1
 catalog = [None]*1
-catalog[0] = 'COSMOS2015_Laigle+_v1.1_850wide+850narrow+450narrow+24micron+3GHz_simple.fits' 
+catalog[0] = 'COSMOS2015_Laigle+_v1.1_5band_2agn_9cat_simple.fits' 
 
 ###set columns in the main catalog
 color1 = "MNUV"
@@ -310,7 +314,9 @@ for i in range(number):
 ######### stack QG without 450 detection
 
 print 'stack QG without 450 detection'
-MASK1 = (data[0]['450NARROW']==0) & (data[0]['24MICRON']==1) & (data[0]['3GHZ']==0)
+MASK1 = (data[0]['450NARROW']==0) & (data[0]['24MICRON']==0)& (data[0]['3GHZ']==1)#&(data[0]['SFG']==1)
+#& (data[0]['MLAGN']!=1) & (data[0]['HLAGN']!=1)
+#& ((data[0]['MLAGN']==1)|(data[0]['HLAGN']==1))
 # (data[0]['24MICRON']==1)#& (data[0]['3GHZ']==1)
 MASK2 = Mask_M(0) & Mask_photoz(0) & Mask_error(1,0.1,0) & Mask_class_star(0)
 MASK3 = Mask_myclassQG(0)
