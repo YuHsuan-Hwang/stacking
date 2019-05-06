@@ -188,6 +188,7 @@ def OnePointStacking(data_tmp,wcs,image_data,rms_data,inputradius,inputra,inputd
         if i == 0:
             random_ra_list.append(random_ra)
             random_dec_list.append(random_dec)
+        
         randompix_rmssum = 0
         for j in range(pos_num):
             ra1 = random_ra[j]
@@ -267,6 +268,78 @@ def task():
     
     return
 
+def RandomStacking(inputpos_num,wcs,image_data,rms_data,inputradius,inputra,inputdec):
+    random_ra_list = []
+    random_dec_list = []
+    test_num = 1000
+    pos_num = inputpos_num
+    randompix = np.zeros(test_num)
+    block_num = 0
+    for i in range(test_num):
+        random_ang = np.random.uniform(0,2*np.pi,pos_num)
+        random_dis = inputradius.to(u.degree).value*np.sqrt(np.random.uniform(0,1,pos_num))
+        center = SkyCoord(inputra, inputdec, frame='fk5')
+        random_ra = center.ra.value + random_dis*np.cos(random_ang)
+        random_dec = center.dec.value + random_dis*np.sin(random_ang)
+        #if i == 0:
+            #random_ra_list.append(random_ra)
+            #random_dec_list.append(random_dec)
+        random_ra_list.append(random_ra)
+        random_dec_list.append(random_dec)
+        randompix_rmssum = 0
+        for j in range(pos_num):
+            ra1 = random_ra[j]
+            dec1 = random_dec[j]
+            x1_tmp, y1_tmp = wcs.all_world2pix([[ra1, dec1]], 0)[0]
+            x1,y1 = int(x1_tmp),int(y1_tmp)
+            if (image_data[y1,x1]/rms_data[y1,x1])<3.5:
+                randompix[i] = randompix[i] + image_data[y1,x1]*(1/rms_data[y1,x1])
+                randompix_rmssum = randompix_rmssum + (1/rms_data[y1,x1])
+            else:
+                block_num = block_num + 1
+        randompix[i] = randompix[i]/randompix_rmssum
+        
+    return randompix, block_num, random_ra_list, random_dec_list
+
+def RandomStackingTest():
+
+    ###read image file
+    image_data,wcs = ReadImage(IMAGE,1)
+    #PlotImageHist(image_data[~np.isnan(image_data)],100)
+    #PlotImage(wcs,1,image_data,-10,10)
+    rms_data = ReadImage(RMS,0)
+    
+    num = 4
+    randompix_mean = np.zeros(num)
+    randompix_std = np.zeros(num)
+    block_num = np.zeros(num)
+    #test_num_list = [10,int(np.sqrt(10)*10),100,int(np.sqrt(10)*100),1000,2000,5000,10000]
+    #test_num_list = range(10000,110000,10000)
+    pos_num_list = [10,100,1000,10000]
+    for i in range(num):
+        randompix, block_num[i], random_ra_list, random_dec_list = \
+        RandomStacking(pos_num_list[i],wcs,image_data,rms_data,\
+                       RADIUS,CENTER_RA, CENTER_DEC)
+        randompix_mean[i] = np.mean(randompix)
+        randompix_std[i] = np.std(randompix)#*np.sqrt(pos_num_list[i])
+        print 'block_num ',block_num[i]
+        #print randompix
+        #if i==0:
+            #plt.figure(1,figsize=(8,6))
+            #PlotRandomPos(random_ra_list,random_dec_list)
+        #plt.figure(i+1,figsize=(8,6))
+        #PlotOnePointStackingHist(0,randompix,30)
+    print randompix_mean 
+    plt.figure(1,figsize=(8,6))
+    plt.plot(pos_num_list,randompix_mean)
+    plt.title('mean')
+    plt.show()
+    print randompix_std
+    plt.figure(2,figsize=(8,6))
+    plt.plot(pos_num_list,randompix_std)
+    plt.title('std')
+    plt.show()
+
 # =============================================================================
 # main code
 # =============================================================================
@@ -312,7 +385,7 @@ for i in range(number):
 
 
 ######### stack QG without 450 detection
-
+'''
 print 'stack QG without 450 detection'
 MASK1 = (data[0]['450NARROW']==0) & (data[0]['24MICRON']==0)& (data[0]['3GHZ']==1)#&(data[0]['SFG']==1)
 #& (data[0]['MLAGN']!=1) & (data[0]['HLAGN']!=1)
@@ -321,7 +394,7 @@ MASK1 = (data[0]['450NARROW']==0) & (data[0]['24MICRON']==0)& (data[0]['3GHZ']==
 MASK2 = Mask_M(0) & Mask_photoz(0) & Mask_error(1,0.1,0) & Mask_class_star(0)
 MASK3 = Mask_myclassQG(0)
 MASK = MASK1 & MASK2 & MASK3
-
+'''
 CENTER_RA,CENTER_DEC = '10h00m25.0s', '2d24m22.0s'
 #'10h00m30.2s', '02d26m50.0s' #'10h00m25.0s', '2d24m22.0s'
 RADIUS = 0.2*u.degree #7.5*u.arcmin #0.2*u.degree
@@ -335,9 +408,9 @@ IMAGE_NAME = '450 micron image'
 
 RMS = '04_COSMOS450_850/STUDIES/STUDIES+S2CLS+Casey_450_mf_rms.fits'
 
-task()
+#task()
 
-
+RandomStackingTest()
 
 ######### stack QG with 450 detection
 '''
