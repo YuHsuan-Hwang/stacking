@@ -156,12 +156,11 @@ def PlotImage(wcs,inputwcs,inputimage,inputvmin,inputvmax):
         plt.imshow(inputimage, cmap='gray', vmin=inputvmin, vmax=inputimage.max())
     else:
         plt.imshow(inputimage, cmap='gray', vmin=inputvmin, vmax=inputvmax)
-    plt.colorbar(label='Jy/beam')
+    plt.colorbar(label='mJy/beam')
     plt.gca().invert_yaxis()
     return
 
-def OnePointStacking(data_tmp,wcs,image_data,rms_data,inputradius,inputra,inputdec):
-    
+def OnePointStacking(data_tmp,wcs,image_data,rms_data):
     middlepix = 0
     middlepix_rmssum = 0
     for i in range( len(data_tmp.filled()) ):
@@ -173,42 +172,7 @@ def OnePointStacking(data_tmp,wcs,image_data,rms_data,inputradius,inputra,inputd
             middlepix = middlepix + image_data[y1,x1]*(1/rms_data[y1,x1])
             middlepix_rmssum = middlepix_rmssum + (1/rms_data[y1,x1])
     middlepix = middlepix/middlepix_rmssum
-    
-    random_ra_list = []
-    random_dec_list = []
-    test_num = 1000
-    pos_num = len(data_tmp.filled())
-    randompix = np.zeros(test_num)
-    for i in range(test_num):
-        random_ang = np.random.uniform(0,2*np.pi,pos_num)
-        random_dis = inputradius.to(u.degree).value*np.sqrt(np.random.uniform(0,1,pos_num))
-        center = SkyCoord(inputra, inputdec, frame='fk5')
-        random_ra = center.ra.value + random_dis*np.cos(random_ang)
-        random_dec = center.dec.value + random_dis*np.sin(random_ang)
-        if i == 0:
-            random_ra_list.append(random_ra)
-            random_dec_list.append(random_dec)
-        
-        randompix_rmssum = 0
-        for j in range(pos_num):
-            ra1 = random_ra[j]
-            dec1 = random_dec[j]
-            x1_tmp, y1_tmp = wcs.all_world2pix([[ra1, dec1]], 0)[0]
-            x1,y1 = int(x1_tmp),int(y1_tmp)
-            if (image_data[y1,x1]/rms_data[y1,x1])<3.5:
-                randompix[i] = randompix[i] + image_data[y1,x1]*(1/rms_data[y1,x1])
-                randompix_rmssum = randompix_rmssum + (1/rms_data[y1,x1])
-        randompix[i] = randompix[i]/randompix_rmssum
-        
-    return middlepix, randompix, random_ra_list, random_dec_list
-
-def PlotOnePointStackingHist(inputmiddlepix,inputrandompix,inputN):
-    plt.hist(inputrandompix, inputN,color='C1')
-    plt.title(IMAGE_NAME+': '+r'$\mu$:'+str("%.4f" % (inputmiddlepix))+'\n'\
-              +r'$\mu$:'+str("%.4f" % (np.mean(inputrandompix)))+'mJy/beam, $\sigma$: '\
-              +str("%.4f" % (np.std(inputrandompix)))+'mJy/beam\n'\
-              +'SNR: '+str("%.4f" % ((inputmiddlepix-np.mean(inputrandompix))/np.std(inputrandompix)))\
-              +' sigma')
+    return middlepix
 
 def PlotRandomPos(inputrandom_ra_list,inputrandom_dec_list):
     plt.scatter(inputrandom_ra_list,inputrandom_dec_list,s=0.1)
@@ -237,6 +201,9 @@ def task():
     plt.figure(1,figsize=(8,6))
     final_image = Stacking(data_tmp,wcs,image_data,rms_data,IMAGE_MAX, IMAGE_MIN)
     
+    middlepix = \
+    OnePointStacking(data_tmp,wcs,image_data,rms_data)
+    
     plt.figure(2,figsize=(12,5))
     
     plt.subplot(1, 2, 2)
@@ -246,26 +213,28 @@ def task():
     
     plt.subplot(1, 2, 1)
     PlotImage(wcs,0,final_image,STACK_MAX,STACK_MIN)
-    plt.title(IMAGE_NAME+'\n '+str(len(data_tmp.filled()))+' galaxies')
+    plt.title(IMAGE_NAME+' '+str(len(data_tmp.filled()))+' galaxies\n'\
+              +r'$\mu$:'+str("%.4f" % (middlepix)) +'mJy/beam, SNR: '\
+              +str("%.4f" % ((middlepix-MEAN)/(SIGMA/np.sqrt(len(data_tmp)))))+' sigma')
     plt.tight_layout()
     
-    middlepix, randompix,random_ra_list,random_dec_list = \
-    OnePointStacking(data_tmp,wcs,image_data,rms_data,RADIUS,CENTER_RA, CENTER_DEC)
-    
-    plt.figure(3,figsize=(8,6))
-    PlotOnePointStackingHist(middlepix,randompix,30)
-    
-    plt.figure(4,figsize=(8,6))
-    PlotRandomPos(random_ra_list,random_dec_list)
-    
+    fig = plt.figure(3,figsize=(8,6))
+    PlotImage(wcs,0,final_image,STACK_MAX,STACK_MIN)
+    print str("%.1f" % ((middlepix-MEAN)/SIGMA*np.sqrt(len(data_tmp))))
+    plt.title('QGs without "dusty SFGs" (N='+str(len(data_tmp.filled()))+')\n'\
+              +'mean flux = '+str("%.2f" % (middlepix-MEAN))+'+/-'+str("%.2f" % (SIGMA/np.sqrt(len(data_tmp))))\
+              +'mJy/beam, SNR = 0.8'\
+              , fontdict = {'fontsize' : 16}, y=1.02)
+    plt.xlabel('arcsec')
+    plt.ylabel('arcsec')
+    fig.savefig('QGstacking.png', format='png', dpi=1200)
+    '''
     print 'Calculation'
     print 'middlepix = ',"%.4f" % middlepix
-    print 'randompix_mean = ',"%.4f" % np.mean(randompix)
-    print 'randompix_std = ',"%.4f" % np.std(randompix)
-    print 'final result :',"%.4f" % (middlepix-np.mean(randompix)),'+/-'\
-    ,"%.4f" % np.std(randompix)
-    print 'SNR : ',"%.4f" % ((middlepix-np.mean(randompix))/np.std(randompix)),' sigma'
-    
+    print 'final result :',"%.4f" % (middlepix-MEAN),'+/-'\
+    ,"%.4f" % SIGMA*np.sqrt(len(data_tmp))
+    print 'SNR : ',"%.4f" % ((middlepix-MEAN)/SIGMA*np.sqrt(len(data_tmp))),' sigma'
+    '''
     return
 
 def RandomStacking(inputpos_num,wcs,image_data,rms_data,inputradius,inputra,inputdec):
@@ -292,11 +261,25 @@ def RandomStacking(inputpos_num,wcs,image_data,rms_data,inputradius,inputra,inpu
             dec1 = random_dec[j]
             x1_tmp, y1_tmp = wcs.all_world2pix([[ra1, dec1]], 0)[0]
             x1,y1 = int(x1_tmp),int(y1_tmp)
-            if (image_data[y1,x1]/rms_data[y1,x1])<3.5:
-                randompix[i] = randompix[i] + image_data[y1,x1]*(1/rms_data[y1,x1])
-                randompix_rmssum = randompix_rmssum + (1/rms_data[y1,x1])
-            else:
-                block_num = block_num + 1
+            while (1):
+                if (image_data[y1,x1]/rms_data[y1,x1])>=3.5:
+                    block_num = block_num + 1
+                    onerandom_ang = np.random.uniform(0,2*np.pi,1)
+                    onerandom_dis = inputradius.to(u.degree)\
+                    .value*np.sqrt(np.random.uniform(0,1,1))
+                    onerandom_ra = center.ra.value + onerandom_dis*np.cos(onerandom_ang)
+                    onerandom_dec = center.dec.value + onerandom_dis*np.sin(onerandom_ang)
+                    x1_tmp, y1_tmp = wcs.all_world2pix([[onerandom_ra[0], onerandom_dec[0]]], 0)[0]
+                    x1,y1 = int(x1_tmp),int(y1_tmp)
+                else:
+                    randompix[i] = randompix[i] + image_data[y1,x1]*(1/rms_data[y1,x1])
+                    randompix_rmssum = randompix_rmssum + (1/rms_data[y1,x1])
+                    break
+            #if (image_data[y1,x1]/rms_data[y1,x1])<3.5:
+                #randompix[i] = randompix[i] + image_data[y1,x1]*(1/rms_data[y1,x1])
+                #randompix_rmssum = randompix_rmssum + (1/rms_data[y1,x1])
+            #else:
+                #block_num = block_num + 1
         randompix[i] = randompix[i]/randompix_rmssum
         
     return randompix, block_num, random_ra_list, random_dec_list
@@ -309,13 +292,13 @@ def RandomStackingTest():
     #PlotImage(wcs,1,image_data,-10,10)
     rms_data = ReadImage(RMS,0)
     
-    num = 4
+    num = 6
     randompix_mean = np.zeros(num)
     randompix_std = np.zeros(num)
     block_num = np.zeros(num)
     #test_num_list = [10,int(np.sqrt(10)*10),100,int(np.sqrt(10)*100),1000,2000,5000,10000]
     #test_num_list = range(10000,110000,10000)
-    pos_num_list = [10,100,1000,10000]
+    pos_num_list = [10,100,1000,2000,5000,10000]
     for i in range(num):
         randompix, block_num[i], random_ra_list, random_dec_list = \
         RandomStacking(pos_num_list[i],wcs,image_data,rms_data,\
@@ -339,6 +322,19 @@ def RandomStackingTest():
     plt.plot(pos_num_list,randompix_std)
     plt.title('std')
     plt.show()
+    
+    sstd = []
+    for i in range(num):
+        sstd.append(randompix_std[i]*np.sqrt(pos_num_list[i]))
+    plt.figure(1,figsize=(8,6))
+    plt.plot(pos_num_list,sstd)
+    plt.title('sstd')
+    plt.show()
+
+x = [10,100,1000,2000,5000,10000]
+y = 2/np.sqrt(x)
+plt.plot(x,y)
+plt.show()
 
 # =============================================================================
 # main code
@@ -385,22 +381,26 @@ for i in range(number):
 
 
 ######### stack QG without 450 detection
-'''
+
 print 'stack QG without 450 detection'
-MASK1 = (data[0]['450NARROW']==0) & (data[0]['24MICRON']==0)& (data[0]['3GHZ']==1)#&(data[0]['SFG']==1)
+
+MEAN = -0.1265
+SIGMA = 2
+
+MASK1 = (data[0]['450NARROW']==0)&(data[0]['SFG']!=1)&((data[0]['24MICRON']==0))#&(data[0]['SFG']==1)
 #& (data[0]['MLAGN']!=1) & (data[0]['HLAGN']!=1)
 #& ((data[0]['MLAGN']==1)|(data[0]['HLAGN']==1))
 # (data[0]['24MICRON']==1)#& (data[0]['3GHZ']==1)
 MASK2 = Mask_M(0) & Mask_photoz(0) & Mask_error(1,0.1,0) & Mask_class_star(0)
 MASK3 = Mask_myclassQG(0)
 MASK = MASK1 & MASK2 & MASK3
-'''
+
 CENTER_RA,CENTER_DEC = '10h00m25.0s', '2d24m22.0s'
 #'10h00m30.2s', '02d26m50.0s' #'10h00m25.0s', '2d24m22.0s'
 RADIUS = 0.2*u.degree #7.5*u.arcmin #0.2*u.degree
 
 IMAGE_MAX, IMAGE_MIN = -10,10
-STACK_MAX,STACK_MIN = -1,1#-0.4,0.4#
+STACK_MAX,STACK_MIN = -1,1#-0.3,0.3#-0.4,0.4#
 
 
 IMAGE = '04_COSMOS450_850/STUDIES/STUDIES+S2CLS+Casey_450_mf.fits'
@@ -408,13 +408,17 @@ IMAGE_NAME = '450 micron image'
 
 RMS = '04_COSMOS450_850/STUDIES/STUDIES+S2CLS+Casey_450_mf_rms.fits'
 
-#task()
+task()
 
-RandomStackingTest()
+#RandomStackingTest()
 
 ######### stack QG with 450 detection
 '''
 print 'stack QG with 450 detection'
+
+MEAN = -0.1265
+SIGMA = 2
+
 MASK1 = data[0]['450NARROW']!=0
 MASK2 = Mask_M(0) & Mask_photoz(0) & Mask_error(1,0.1,0) & Mask_class_star(0)
 MASK3 = Mask_myclassQG(0)
@@ -425,7 +429,7 @@ CENTER_RA,CENTER_DEC = '10h00m25.0s', '2d24m22.0s'
 RADIUS = 0.2*u.degree #7.5*u.arcmin #0.2*u.degree
 
 IMAGE_MAX, IMAGE_MIN = -10,10
-STACK_MAX,STACK_MIN = -10,10
+STACK_MAX,STACK_MIN = -5,5
 
 
 IMAGE = '04_COSMOS450_850/STUDIES/STUDIES+S2CLS+Casey_450_mf.fits'
