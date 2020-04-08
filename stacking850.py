@@ -23,75 +23,82 @@ from astropy.cosmology import FlatLambdaCDM
 # =============================================================================
 # functions
 # =============================================================================
-def ReadCatalog(index,catalog):
-    data[index] = Table.read(catalog, hdu=1)
-    x[index] = data[index][color2]-data[index][color3]
-    y[index] = data[index][color1]-data[index][color2]
+
+def ReadCatalog( index, catalog ):
+    
+    data[index] = Table.read( catalog, hdu=1 )
+    x.append( data[index][color2]-data[index][color3] )
+    y.append( data[index][color1]-data[index][color2] )
+    
     return
 
-def Mask_M(index):
-    down = -30
-    up = 0
-    mask_color1 = (data[index][color1]>down) & (data[index][color1]<up)
-    mask_color2 = (data[index][color2]>down) & (data[index][color2]<up)
-    mask_color3 = (data[index][color3]>down) & (data[index][color3]<up)
-    mask_M = mask_color1 & mask_color2 & mask_color3
-    return mask_M
 
-def Mask_error(mode,inputup,index):
-    up = inputup
+def Mask_M(index):
+    
+    down, up    = -30, 0
+    mask_color1 = ( data[index][color1]>down ) & ( data[index][color1]<up )
+    mask_color2 = ( data[index][color2]>down ) & ( data[index][color2]<up )
+    mask_color3 = ( data[index][color3]>down ) & ( data[index][color3]<up )
+   
+    return mask_color1 & mask_color2 & mask_color3
+
+def Mask_error( mode, up, index ):
+    
     if mode==1:
-        mask_V_errorV = (data[index][V_error]<up) & (data[index][V_error]>0)
-        #Suprime-Cam:i+band
-        mask_ip_error = (data[index][ip_error]<up) & (data[index][ip_error]>0)
-        mask_J_error = (data[index][J_error]<up) & (data[index][J_error]>0)
-        mask_Ks_error = (data[index][Ks_error]<up) & (data[index][Ks_error]>0)
+        mask_V_errorV = ( data[index][V_error] <up ) & ( data[index][V_error] >0 )
+        mask_ip_error = ( data[index][ip_error]<up ) & ( data[index][ip_error]>0 ) #Suprime-Cam:i+band
+        mask_J_error  = ( data[index][J_error] <up ) & ( data[index][J_error] >0 )
+        mask_Ks_error = ( data[index][Ks_error]<up ) & ( data[index][Ks_error]>0 )
         return mask_V_errorV | mask_ip_error | mask_J_error | mask_Ks_error
+    
     if mode==2:
-        return (data[index][Ks_error]<up) & (data[index][Ks_error]>0)
+        return (data[index][V_error]<up) & (data[index][V_error]>0)
+    
     if mode==3:
         return (data[index][Ks_mag]<24)
     
 
-def Mask_photoz(index):
-    return (data[index][photoz]>0) 
+def Mask_photoz( index ):
+    return (data[index][photoz]>0)
 
-def Mask_class_star(index):
-    return (data[index][class_star]==0)| (data[index][class_star]==2)###
+def Mask_class_star( index ):
+    return ( data[index][class_star]==0 ) | ( data[index][class_star]==2 )
 
-def Mask_classQG(index):
-    return (data[index][class_SFG]==0)
-def Mask_classSFG(index):
-    return (data[index][class_SFG]==1)
-def Mask_myclassQG(index):
-    return (y[index]>3.1) & (y[index]>3.0*x[index]+1.0)
-def Mask_myclassSFG(index):
-    return (y[index]<=3.1) | (y[index]<=3.0*x[index]+1.0)
+def MaskAll( index ):
+    return Mask_M(index) & Mask_error( 1, 0.1, index ) & Mask_photoz( index ) & Mask_class_star( index )
 
-def Mask_mass(index,low,high):
-    return (data[index][mass]<=high) & (data[index][mass]>low)
 
-def Mask_z(index,low,high):
-    return (data[index][photoz]<=high) & (data[index][photoz]>low)
+def Mask_classQG   ( index ): return ( data[index][class_SFG]==0 )
+def Mask_classSFG  ( index ): return ( data[index][class_SFG]==1 )
+def Mask_myclassQG ( index ): return ( y[index]> 3.1 ) & ( y[index]> 3.0*x[index]+1.0 )
+def Mask_myclassSFG( index ): return ( y[index]<=3.1 ) | ( y[index]<=3.0*x[index]+1.0 )
 
-def MaskRegion(mask,inputra,inputdec,inputradius):
-    c0 = SkyCoord(ra=data[0][mask[0]][ra[0]], dec=data[0][mask[0]][dec[0]])
-    center = SkyCoord(inputra, inputdec, frame='fk5')
+def MaskAllQG  ( index ): return MaskAll( index ) & Mask_myclassQG( index )
+def Mask_nonSMG( index ): return ( data[index]['850WIDE'] ==0 ) | ( data[index]['850WIDE']     ==7 )
+def Mask_nonIRB( index ): return ( data[index]['24MICRON']==0 ) & ( data[index]['Radio_excess']!=0 ) #radio excess = -99 or 1
+def Mask_IRB   ( index ): return ( data[index]['24MICRON']==1 ) | ( data[index]['Radio_excess']==0 ) 
+
+def Mask_mass( index, low, high ): return ( data[index][mass  ]<=high ) & ( data[index][mass  ]>low )
+def Mask_z   ( index, low, high ): return ( data[index][photoz]<=high ) & ( data[index][photoz]>low )
+
+def MaskRegion( mask,inputra,inputdec,inputradius ):
+    
+    c0     = SkyCoord( ra=data[0][mask[0]][ra[0]], dec=data[0][mask[0]][dec[0]] )
+    center = SkyCoord( inputra, inputdec, frame='fk5' )
     radius = inputradius
-    sep = center.separation(c0)
+    sep    = center.separation( c0 )
+    
     return sep<=radius
 
-def MeanMass(data):
-    return np.mean(10**data[mass])
+def MeanMass      ( data ):  return np.mean     ( 10**data[mass  ] )
+def MedianRedshift( data ):  return np.ma.median(     data[photoz] )
 
-def MedianRedshift(data):
-    return np.ma.median(data[photoz])
-
-def ReadImage(filename,wcs_flag):
+def ReadImage( filename, wcs_flag ):
+    
     hdu_list = fits.open(filename)
     #hdu_list.info()
     data = hdu_list[0].data[0]
-    if wcs_flag==1:
+    if ( wcs_flag==1 ):
         wcs = WCS(hdu_list[0].header).celestial
         return data,wcs
     else:
@@ -170,26 +177,32 @@ def PlotImage(wcs,inputwcs,inputimage,inputvmin,inputvmax):
     plt.gca().invert_yaxis()
     return
 
-def OnePointStacking(data_tmp,wcs,image_data,rms_data):
-    middlepix = 0
+
+
+def OnePointStacking( data_tmp, wcs, image_data, rms_data ):
+    
+    middlepix        = 0
     middlepix_rmssum = 0
-    cut_num = 0
+    cut_num          = 0
+    
     for i in range( len(data_tmp.filled()) ):
-        ra1 = data_tmp[ra[0]][i]
-        dec1 = data_tmp[dec[0]][i]
-        x1_tmp, y1_tmp = wcs.all_world2pix([[ra1, dec1]], 0)[0]
-        x1,y1 = int(x1_tmp),int(y1_tmp)
         
-        if (image_data[y1,x1]/rms_data[y1,x1])<SHRESHOLD:
+        ra1            = data_tmp[ra[0] ][i]
+        dec1           = data_tmp[dec[0]][i]
+        x1_tmp, y1_tmp = wcs.all_world2pix( [[ra1, dec1]], 0 )[0]
+        x1    , y1     = int( x1_tmp ), int( y1_tmp )
+        
+        if ( (image_data[y1,x1]/rms_data[y1,x1])<SHRESHOLD ):
             middlepix = middlepix + image_data[y1,x1]*(1/rms_data[y1,x1])
             middlepix_rmssum = middlepix_rmssum + (1/rms_data[y1,x1])
-        else:
-            cut_num+=1
+            
+        else: cut_num+=1
         
-        #middlepix = middlepix + image_data[y1,x1]*(1/rms_data[y1,x1])
-        #middlepix_rmssum = middlepix_rmssum + (1/rms_data[y1,x1])
     middlepix = middlepix/middlepix_rmssum
-    return middlepix,cut_num
+    
+    return middlepix, cut_num
+
+
 
 def PlotRandomPos(inputrandom_ra_list,inputrandom_dec_list):
     plt.scatter(inputrandom_ra_list,inputrandom_dec_list,s=0.1)
@@ -255,18 +268,13 @@ def taskprint(TITLE,MASK):
     ###candidate within selected region
     data_tmp = data[0][MASK]
     
-    # stack image #
+    ###stack image  
+    middlepix, cut_num = OnePointStacking( data_tmp, wcs, image_data, rms_data )
     
-    ###read image file
-    image_data,wcs = ReadImage(IMAGE,1)
-    rms_data = ReadImage(RMS,0)
-    
-    middlepix,cut_num = \
-    OnePointStacking(data_tmp,wcs,image_data,rms_data)
-    
-    mean_flux = middlepix-MEAN
-    median_z = MedianRedshift(data_tmp)
-    num = len(data_tmp)-cut_num
+    mean_flux = middlepix - MEAN
+    num       = len( data_tmp ) - cut_num
+    median_z  = MedianRedshift( data_tmp )
+    mean_mass = MeanMass      ( data_tmp )
     
     '''
     mean_mass = MeanMass(data_tmp)
@@ -285,28 +293,26 @@ def taskprint(TITLE,MASK):
 
     
     if (mean_flux<=0.0):
-        mean_mass = 0.0 
+       #### mean_mass = 0.0 
         L_IR = 0.0
         SFR = 0.0
         sSFR = 0.0
     else:
-        mean_mass = MeanMass(data_tmp)
         L_IR = mean_flux*1.9e12
-        SFR = L_IR*1.7e-10
-        sSFR = np.log10(SFR/mean_mass)
+        SFR  = L_IR*1.7e-10
+        sSFR = np.log10( SFR/mean_mass )
     
-    #{:<18s}{:<8s}{:^8s}{:>8s}{:>8s}{:>8s}{:>10s}{:>6s}
-    print '{:<18s}{:<9s}{:<10s}{:<6d}{:^8s}{:>6s}{:>12s}{:>6s}{:>6s}'.format(\
-           TITLE,("%.1f" % np.log10(MeanMass(data_tmp))),("%.1f" % median_z),num,\
-           (("%.2f" % mean_flux)+'+/-'+("%.2f" % (SIGMA/np.sqrt(num)))),\
-           ("%.1f" % (mean_flux/SIGMA*np.sqrt(num))),\
-           ("%.1e" % L_IR),\
-           ("%3d" % SFR ),\
-           ("%.1f" % sSFR )  )          
+    print '{:<18s}{:<9s}{:<10s}{:<6d}{:^8s}{:>6s}{:>12s}{:>6s}{:>6s}'.format(
+           TITLE,
+           ( "%.1f" % np.log10(MeanMass(data_tmp))   ),
+           ( "%.1f" % median_z                       ),
+           num,
+           ( ("%.2f" % mean_flux) + '+/-' + ("%.2f" % (SIGMA/np.sqrt(num))) ),
+           ( "%.1f" % (mean_flux/SIGMA*np.sqrt(num)) ),
+           ( "%.1e" % L_IR                           ),
+           ( "%3d"  % SFR                            ),
+           ( "%.1f" % sSFR                           )  )          
 
-    #L_IR_str,\
-    #("%3d" % SFR ),\
-    #("%.1f" % sSFR)   ) 
     
     return
     
@@ -316,35 +322,19 @@ def taskSSFR(MASK):
     ###candidate within selected region
     data_tmp = data[0][MASK]
     
-    # stack image #
+    ###stack image
+    middlepix = OnePointStacking( data_tmp, wcs, image_data, rms_data )
     
-    ###read image file
-    image_data,wcs = ReadImage(IMAGE,1)
-    rms_data = ReadImage(RMS,0)
-    
-    middlepix = \
-    OnePointStacking(data_tmp,wcs,image_data,rms_data)
-    
-    mean_flux = middlepix-MEAN
+    mean_flux = middlepix - MEAN
     
     if (mean_flux<=0.0):
         mean_mass = 0.0
-        #masserr_up = 0.0
-        #masserr_low = 0.0
         SFR = 0.0
-        #SFR_err = 0.0
     else:
         mean_mass = np.log10( MeanMass(data_tmp) )
-        #masserr_up = np.log10( MeanMass(data_tmp) + np.sqrt(sum( (10**data_tmp[mass_error_upper]-10**data_tmp[mass])**2 )) / len(data_tmp) ) - np.log10(MeanMass(data_tmp))
-        #masserr_low = np.log10(MeanMass(data_tmp)) - np.log10( MeanMass(data_tmp) - np.sqrt(sum( (10**data_tmp[mass]-10**data_tmp[mass_error_lower])**2 )) / len(data_tmp) )
         SFR = np.log10( (mean_flux*1.9*1.7*100) )
-        #print "%.1E" % (np.sqrt(sum( (10**data_tmp[mass_error_upper]-10**data_tmp[mass])**2 )) / len(data_tmp))
-        #print np.log10(MeanMass(data_tmp) + np.sqrt(sum( (10**data_tmp[mass_error_upper]-10**data_tmp[mass])**2 )) / len(data_tmp) )
-        #print np.log10( MeanMass(data_tmp) )
-        #print
-        #SFR_err = np.log10(( mean_flux + SIGMA/np.sqrt(len(data_tmp)) )*1.9*1.7*100) - np.log10(mean_flux*1.9*1.7*100) 
-      
-    return mean_mass, SFR#, SFR_err#, masserr_up, masserr_low
+
+    return mean_mass, SFR
 
 def taskSSFR_WH(MASK):
     
@@ -499,129 +489,20 @@ def RandomStackingTask():
     plt.plot(pos_num_list,sstd)
     plt.title('sstd')
     plt.show()
-    
-    
-def stack_multiband():
-    '''
-    MASK1 = 
-    TITLE = "QGs with 850 $\mu$m detection"
-    STACK_MAX,STACK_MIN = -5,5
-    
-    MASK = MASK1 & MASK2 & MASK3
-    task(MASK,TITLE)
-    '''
-    
-    #QGs without 850 $\mu$m detection
-    MASK1 = (data[0]['850WIDE']==0)|(data[0]['850WIDE']==4)|(data[0]['LENSING']==1)
-    TITLE = "All QG"
-    STACK_MAX,STACK_MIN = -0.1,0.1
-    
-    MASK = MASK1 & MASK2 & MASK3
-    taskprint(TITLE,MASK)
-    
-    
-    '''
-    MASK1 = ((data[0]['850WIDE']==0)|(data[0]['850WIDE']==4)|(data[0]['LENSING']==1))&(data[0]['24MICRON']==0)
-    TITLE = "QGs without 24 $\mu$m detection"
-    STACK_MAX,STACK_MIN = -0.1,0.1
-    
-    MASK = MASK1 & MASK2 & MASK3
-    task(MASK,TITLE)
-    '''
-    
-    #QGs with 24 $\mu$m detection
-    MASK1 = ((data[0]['850WIDE']==0)|(data[0]['850WIDE']==4)|(data[0]['LENSING']==1))&(data[0]['24MICRON']==1)
-    TITLE = "24-micron ctp."
-    STACK_MAX,STACK_MIN = -0.35,0.35
-    
-    MASK = MASK1 & MASK2 & MASK3
-    taskprint(TITLE,MASK)
-    
-    
-    '''
-    MASK1 = ((data[0]['850WIDE']==0)|(data[0]['850WIDE']==4)|(data[0]['LENSING']==1))&(data[0]['3GHZ']==0)
-    TITLE = "QGs without 3 GHz detection"
-    STACK_MAX,STACK_MIN = -0.1,0.1
-    
-    MASK = MASK1 & MASK2 & MASK3
-    task(MASK,TITLE)
-    '''
-    
-    
-    MASK1 = ((data[0]['850WIDE']==0)|(data[0]['850WIDE']==4)|(data[0]['LENSING']==1))&(data[0]['3GHZ']==1)
-    TITLE = "3-GHz ctp."
-    STACK_MAX,STACK_MIN = -0.2,0.2
-    
-    MASK = MASK1 & MASK2 & MASK3
-    taskprint(TITLE,MASK)
-    
-    
-    #QGs with label "SFG"
-    #MASK1 = ((data[0]['850WIDE']==0)|(data[0]['850WIDE']==4)|(data[0]['LENSING']==1))&(data[0]['SFG']==1)
-    MASK1 = ((data[0]['850WIDE']==0)|(data[0]['850WIDE']==4)|(data[0]['LENSING']==1))&(data[0]['Radio_excess']==0)
-    TITLE = '3-GHz ctp.: SFG'
-    STACK_MAX,STACK_MIN = -0.6,0.6
-    
-    MASK = MASK1 & MASK2 & MASK3
-    taskprint(TITLE,MASK)
-    
-    
-    #QGs with label "AGN"
-    #MASK1 = ((data[0]['850WIDE']==0)|(data[0]['850WIDE']==4)|(data[0]['LENSING']==1))&(data[0]['SFG']==0)
-    MASK1 = ((data[0]['850WIDE']==0)|(data[0]['850WIDE']==4)|(data[0]['LENSING']==1))&(data[0]['Radio_excess']==1)
-    TITLE = '3-GHz ctp.: AGN'
-    STACK_MAX,STACK_MIN = -0.2,0.2
-    
-    MASK = MASK1 & MASK2 & MASK3
-    taskprint(TITLE,MASK)
-    
-    '''
-    #QGs with "dusty SFGs"
-    #MASK1 = ((data[0]['850WIDE']==0)|(data[0]['850WIDE']==4)|(data[0]['LENSING']==1))&( (data[0]['24MICRON']==1)|(data[0]['SFG']==1) )
-    MASK1 = ((data[0]['850WIDE']==0)|(data[0]['850WIDE']==4)|(data[0]['LENSING']==1))&( (data[0]['24MICRON']==1)|(data[0]['Radio_excess']==0) )
-    TITLE = 'dusty SFGs'
-    STACK_MAX,STACK_MIN = -0.1,0.1
-    
-    MASK = MASK1 & MASK2 & MASK3
-    taskprint(TITLE,MASK)
-    
-    #QGs without "dusty SFGs"
-    #MASK1 = ((data[0]['850WIDE']==0)|(data[0]['850WIDE']==4)|(data[0]['LENSING']==1))&(data[0]['24MICRON']==0)&(data[0]['SFG']!=1)
-    MASK1 = ((data[0]['850WIDE']==0)|(data[0]['850WIDE']==4)|(data[0]['LENSING']==1))&(data[0]['24MICRON']==0)&(data[0]['Radio_excess']!=0)
-    TITLE = 'non-dusty SFGs'
-    STACK_MAX,STACK_MIN = -0.1,0.1
-    
-    MASK = MASK1 & MASK2 & MASK3
-    taskprint(TITLE,MASK)
-    '''
-    return
 
 
-def StackmassBin(name, MASKZ):
-    mask = MASKZ & MASK2 & MASK3
-    print name
-    
-    TITLE = 'logM* <= 10.5'
-    MASK = Mask_mass(0,0,10.5)&mask
-    taskprint(TITLE,MASK)
-    TITLE = 'logM* > 10.5'
-    MASK = Mask_mass(0,10.5,100)&mask
-    taskprint(TITLE,MASK)
-    
-    return
 
-def StackzBin(MASK1):
+def StackBin( mask ):
     
-    print
-    StackmassBin("z <= 0.5",MASK1 &Mask_z(0,0,0.5))
-    print
-    StackmassBin("0.5 < z <= 1.0",MASK1 &Mask_z(0,0.5,1.0))
-    print 
-    StackmassBin("1.0 < z <= 1.5",MASK1 &Mask_z(0,1.0,1.5))
-    print 
-    StackmassBin("1.5 < z <= 2.0",MASK1 &Mask_z(0,1.5,2.0))
-    print 
-    StackmassBin("z > 2.0",MASK1 &Mask_z(0,2.0,100.0))
+    z_list = [ "z <= 0.5", "0.5 < z <= 1.0", "1.0 < z <= 1.5", "1.5 < z <= 2.0", "z > 2.0" ]
+    z_mask_list = [ Mask_z(0,0,0.5), Mask_z(0,0.5,1.0), Mask_z(0,1.0,1.5), 
+                    Mask_z(0,1.5,2.0), Mask_z(0,2.0,100.0) ]
+    
+    for i in range(5):
+        print
+        print z_list[i]
+        taskprint( 'logM* <= 10.5', mask & z_mask_list[i] & Mask_mass(0,0   ,10.5) )
+        taskprint( 'logM* > 10.5',  mask & z_mask_list[i] & Mask_mass(0,10.5,100 ) )
     
     return
 
@@ -633,35 +514,47 @@ def PrintStacking():
         print "shreshold =",SHRESHOLD,"    mean =",MEAN,"   sigma =",SIGMA,"/sqrt(N)"
     
     dashnum = 85
-    print "-"*dashnum
-    print '{:<16s}{:<10s}{:<10s}{:<8s}{:^10s}{:>6s}{:>10s}{:>8s}{:>6s}'.format\
-    ("Groups","Mean_M*","Median_z","Number","Mean_flux","SNR","L_IR","SFR","sSFR")
-    print "-"*dashnum
     
-    stack_multiband()    
+    print "-"*dashnum
+    print '{:<16s}{:<10s}{:<10s}{:<8s}{:^10s}{:>6s}{:>10s}{:>8s}{:>6s}'.format(
+    "Groups","Mean_M*","Median_z","Number","Mean_flux","SNR","L_IR","SFR","sSFR")
     
     print "-"*dashnum
     
-    #MASK1 = ((data[0]['850WIDE']==0)|(data[0]['850WIDE']==4))\
-    #         &(data[0]['24MICRON']==0)&(data[0]['Radio_excess']!=0)
-    MASK1 = (data[0]['24MICRON']==0)&(data[0]['Radio_excess']!=0)
-    TITLE = "'QG'"
-    MASK = MASK1 & MASK2 & MASK3
-    taskprint(TITLE,MASK)
-    StackzBin(MASK1)
+    
+    #QGs without 850um detection    #STACK_MAX,STACK_MIN = -0.1,0.1
+    taskprint( "All QG",          MaskAllQG(0) & Mask_nonSMG(0)                                )
+    
+    #QGs with 24um detection        #STACK_MAX,STACK_MIN = -0.35,0.35
+    taskprint( "24-micron ctp.",  MaskAllQG(0) & Mask_nonSMG(0) & (data[0]['24MICRON']    ==1) )
+    
+    #QGs with 3GHz detection        #STACK_MAX,STACK_MIN = -0.2,0.2
+    taskprint( "3-GHz ctp.",      MaskAllQG(0) & Mask_nonSMG(0) & (data[0]['3GHZ']        ==1) )
+    
+    #QGs with label "SFG"           #STACK_MAX,STACK_MIN = -0.6,0.6
+    taskprint( "3-GHz ctp.: SFG", MaskAllQG(0) & Mask_nonSMG(0) & (data[0]['Radio_excess']==0) )
+    
+    #QGs with label "AGN"           #STACK_MAX,STACK_MIN = -0.2,0.2
+    taskprint( "3-GHz ctp.: AGN", MaskAllQG(0) & Mask_nonSMG(0) & (data[0]['Radio_excess']==1) )  
+    
     
     print "-"*dashnum
     
-    #MASK1 = ((data[0]['850WIDE']==0)|(data[0]['850WIDE']==4))\
-    #        &( (data[0]['24MICRON']==1)|(data[0]['Radio_excess']==0) )
-    MASK1 = ( (data[0]['24MICRON']==1)|(data[0]['Radio_excess']==0) )
-    TITLE = "'IR-bright QG'"
-    MASK = MASK1 & MASK2 & MASK3
-    taskprint(TITLE,MASK)
-    StackzBin(MASK1)
+    maskQG = MaskAllQG(0) & Mask_nonSMG(0) & Mask_nonIRB(0)
+    taskprint( "'QG'", maskQG )
+    StackBin( maskQG )  
+
+    
+    print "-"*dashnum
+    
+    maskIRBQG = MaskAllQG(0) & Mask_nonSMG(0) & Mask_IRB(0)
+    taskprint( "'IR-bright QG'", maskIRBQG )
+    StackBin( maskIRBQG )
+    
     
     print "-"*dashnum
     print
+    
     return
 
 def PlotSSFR():
@@ -1051,45 +944,45 @@ def PlotSSFR850450_tick2():
 
 time1 = time.time()
 
-number = 1
-catalog = [None]*1
-catalog[0] = "COSMOS2015_merged.fits"
-
 ###set columns in the main catalog
-color1 = "MNUV"
-color2 = "MR"
-color3 = "MJ"
-color = [ color1, color2, color3 ]
-photoz = "REDSHIFT"
-V_error = "V_MAGERR_APER3"
-ip_error = "ip_MAGERR_APER3"
-J_error = "J_MAGERR_APER3"
-Ks_error = "Ks_MAGERR_APER3"
-Ks_mag = "Ks_MAG_APER3"
-mass = "MASS_MED"
+color1     = "MNUV"
+color2     = "MR"
+color3     = "MJ"
+color      = [ color1, color2, color3 ]
+photoz     = "REDSHIFT"
+V_error    = "V_MAGERR_APER3"
+ip_error   = "ip_MAGERR_APER3"
+J_error    = "J_MAGERR_APER3"
+Ks_error   = "Ks_MAGERR_APER3"
+Ks_mag     = "Ks_MAG_APER3"
+mass       = "MASS_MED"
 class_star = "TYPE"
-class_SFG = "CLASS"
-ra = "ALPHA_J2000"
-dec = "DELTA_J2000"
+class_SFG  = "CLASS"
+ra         = "ALPHA_J2000"
+dec        = "DELTA_J2000"
 
 mass_error_upper = "MASS_MED_MAX68"
 mass_error_lower = "MASS_MED_MIN68"
 
 
-ra = [None]*number
-dec = [None]*number
-ra[0] = "ALPHA_J2000"
-dec[0] = "DELTA_J2000"
-
-path = "/Users/yuhsuan/Documents/research/05WH/data/COSMOS/"
+ra         = [None]*1
+dec        = [None]*1
+ra[0]      = "ALPHA_J2000"
+dec[0]     = "DELTA_J2000"
 
 ###read catalog
-data = [None]*number
-x = [None]*number
-y = [None]*number
+catalog    = [None]*1
+catalog[0] = 'COSMOS2015_merged.fits' 
+data       = [None]*1
+x,y        = [],[]
+ReadCatalog( 0,catalog[0] )
 
-for i in range(number):
-    ReadCatalog(i,catalog[0])
+###read image file
+path  = "/Users/yuhsuan/Documents/research/05WH/data/COSMOS/"
+IMAGE = path+'04_COSMOS450_850/S2COSMOS/maps/S2COSMOS_20180927_850_fcf_mf_crop.fits'
+RMS   = path+'04_COSMOS450_850/S2COSMOS/maps/S2COSMOS_20180927_850_err_mf_crop.fits'
+image_data, wcs = ReadImage(IMAGE,1)
+rms_data        = ReadImage(RMS,0)
 
 ###set shreshold
 SHRESHOLD = 3.0
@@ -1102,36 +995,17 @@ MASK2 = Mask_M(0) & Mask_photoz(0) & Mask_error(1,0.1,0) & Mask_class_star(0)
 MASK3 = Mask_myclassQG(0)
 MASK = MASK2 & MASK3
 
-IMAGE = path+'04_COSMOS450_850/S2COSMOS/maps/S2COSMOS_20180927_850_fcf_mf_crop.fits'
-RMS = path+'04_COSMOS450_850/S2COSMOS/maps/S2COSMOS_20180927_850_err_mf_crop.fits'
-
 RandomStackingTask()
 '''
 
-
-
-
 ######### stack QG
 
-
-if (SHRESHOLD==10000.0):
-    MEAN = 0.000
-    SIGMA = 1.326
-elif (SHRESHOLD==3.5):
-    MEAN = -0.029
-    SIGMA = 1.265
-elif (SHRESHOLD==3.0):
-    MEAN = -0.044
-    SIGMA = 1.279
-elif (SHRESHOLD==2.0):
-    MEAN = -0.130
-    SIGMA = 1.166
+if   ( SHRESHOLD==10000.0 ):  MEAN, SIGMA =  0.000, 1.326
+elif ( SHRESHOLD==3.5     ):  MEAN, SIGMA = -0.029, 1.265
+elif ( SHRESHOLD==3.0     ):  MEAN, SIGMA = -0.044, 1.279
+elif ( SHRESHOLD==2.0     ):  MEAN, SIGMA = -0.130, 1.166
 
 
-#"850 micron stacking    "
-    
-IMAGE = path+'04_COSMOS450_850/S2COSMOS/maps/S2COSMOS_20180927_850_fcf_mf_crop.fits'
-RMS = path+'04_COSMOS450_850/S2COSMOS/maps/S2COSMOS_20180927_850_err_mf_crop.fits'
 IMAGE_MAX, IMAGE_MIN = -10,10
 MASK2 = Mask_M(0) & Mask_photoz(0) & Mask_error(1,0.1,0) & Mask_class_star(0)
 MASK3 = Mask_myclassQG(0)
@@ -1187,9 +1061,9 @@ LIR_iter = 0
 
 
 
-#PrintStacking()
+PrintStacking()
 
-PlotSSFR()
+#PlotSSFR()
 
 #PlotSSFR850450()
 #PlotSSFR850450_tick()
