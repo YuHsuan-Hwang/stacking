@@ -74,16 +74,16 @@ def Mask_myclassQG ( index ): return ( y[index]> 3.1 ) & ( y[index]> 3.0*x[index
 def Mask_myclassSFG( index ): return ( y[index]<=3.1 ) | ( y[index]<=3.0*x[index]+1.0 )
 
 def MaskAllQG  ( index ): return MaskAll( index ) & Mask_myclassQG( index )
-def Mask_nonSMG( index ): return ( data[index]['850WIDE'] ==0 ) | ( data[index]['850WIDE']     ==7 )
+def Mask_nonSMG( index ): return ( data[index]['450NARROW'] ==0 ) | ( data[index]['450NARROW']     ==7 )
 def Mask_nonIRB( index ): return ( data[index]['24MICRON']==0 ) & ( data[index]['Radio_excess']!=0 ) #radio excess = -99 or 1
 def Mask_IRB   ( index ): return ( data[index]['24MICRON']==1 ) | ( data[index]['Radio_excess']==0 ) 
 
 def Mask_mass( index, low, high ): return ( data[index][mass  ]<=high ) & ( data[index][mass  ]>low )
 def Mask_z   ( index, low, high ): return ( data[index][photoz]<=high ) & ( data[index][photoz]>low )
 
-def MaskRegion( mask,inputra,inputdec,inputradius ):
+def MaskRegion( mask,inputra,inputdec,inputradius ): #mask is not list
     
-    c0     = SkyCoord( ra=data[0][mask[0]][ra[0]], dec=data[0][mask[0]][dec[0]] )
+    c0     = SkyCoord( ra=data[0][mask][ra[0]], dec=data[0][mask][dec[0]] )
     center = SkyCoord( inputra, inputdec, frame='fk5' )
     radius = inputradius
     sep    = center.separation( c0 )
@@ -266,7 +266,7 @@ def task(TITLE,MASK):
 def taskprint(TITLE,MASK):
     
     ###candidate within selected region
-    data_tmp = data[0][MASK]
+    data_tmp = data[0][MASK][ MaskRegion(MASK,CENTER_RA, CENTER_DEC, RADIUS) ]
     
     ###stack image  
     middlepix, cut_num = OnePointStacking( data_tmp, wcs, image_data, rms_data )
@@ -279,18 +279,17 @@ def taskprint(TITLE,MASK):
     '''
     mean_mass = MeanMass(data_tmp)
     global LIR_iter
-    L_IR = LIR_WH[LIR_iter]
+    L_IR_fl = LIR_WH[LIR_iter]
     if (LIR_limitmask_WH[LIR_iter]==1):
-        L_IR_str = "<"+("%.1E" %  L_IR)
+        L_IR = "<"+("%.1E" %  L_IR_fl)
     else:
-        L_IR_str = ("%.1E" % L_IR)
+        L_IR = ("%.1E" % L_IR_fl)
     
     LIR_iter+=1
     
-    SFR = L_IR*1.7e-10
+    SFR = L_IR_fl*1.7e-10
     sSFR = np.log10(SFR/mean_mass)  
     '''
-
     
     if (mean_flux<=0.0):
        #### mean_mass = 0.0 
@@ -301,6 +300,7 @@ def taskprint(TITLE,MASK):
         L_IR = mean_flux*1.9e12
         SFR  = L_IR*1.7e-10
         sSFR = np.log10( SFR/mean_mass )
+    
     
     print '{:<18s}{:<9s}{:<10s}{:<6d}{:^8s}{:>6s}{:>12s}{:>6s}{:>6s}'.format(
            TITLE,
@@ -557,6 +557,49 @@ def PrintStacking():
     
     return
 
+def PrintStackingSimple():
+    
+    if (SHRESHOLD==10000.0):
+        print "shreshold = -    mean =",MEAN,"   sigma =",SIGMA,"/sqrt(N)"
+    else:
+        print "shreshold =",SHRESHOLD,"    mean =",MEAN,"   sigma =",SIGMA,"/sqrt(N)"
+    
+    dashnum = 85
+    
+    print "-"*dashnum
+    print '{:<16s}{:<10s}{:<10s}{:<8s}{:^10s}{:>6s}{:>10s}{:>8s}{:>6s}'.format(
+    "Groups","Mean_M*","Median_z","Number","Mean_flux","SNR","L_IR","SFR","sSFR")
+    
+    print "-"*dashnum
+    
+    
+    #QGs without 850um detection    #STACK_MAX,STACK_MIN = -0.1,0.1
+    taskprint( "All QG",          MaskAllQG(0) & Mask_nonSMG(0)                                )
+    
+    #QGs with 24um detection        #STACK_MAX,STACK_MIN = -0.35,0.35
+    taskprint( "24-micron ctp.",  MaskAllQG(0) & Mask_nonSMG(0) & (data[0]['24MICRON']    ==1) )
+    
+    #QGs with 3GHz detection        #STACK_MAX,STACK_MIN = -0.2,0.2
+    taskprint( "3-GHz ctp.",      MaskAllQG(0) & Mask_nonSMG(0) & (data[0]['3GHZ']        ==1) )
+    
+    #QGs with label "SFG"           #STACK_MAX,STACK_MIN = -0.6,0.6
+    taskprint( "3-GHz ctp.: SFG", MaskAllQG(0) & Mask_nonSMG(0) & (data[0]['Radio_excess']==0) )
+    
+    #QGs with label "AGN"           #STACK_MAX,STACK_MIN = -0.2,0.2
+    taskprint( "3-GHz ctp.: AGN", MaskAllQG(0) & Mask_nonSMG(0) & (data[0]['Radio_excess']==1) )  
+
+    maskQG = MaskAllQG(0) & Mask_nonSMG(0) & Mask_nonIRB(0)
+    taskprint( "'QG'", maskQG )
+    
+    maskIRBQG = MaskAllQG(0) & Mask_nonSMG(0) & Mask_IRB(0)
+    taskprint( "'IR-bright QG'", maskIRBQG )
+    
+    
+    print "-"*dashnum
+    print
+    
+    return
+
 def PlotSSFR():
 
     fig, axs = plt.subplots(2, 3,figsize=(10,6), sharex=True, sharey=True,
@@ -566,18 +609,17 @@ def PlotSSFR():
     (ax1,ax2,ax3),(ax4,ax5,ax6) = axs
     axs_list = [ax1,ax2,ax3,ax4,ax5]
     
-    MASK1 = ((data[0]['850WIDE']==0)|(data[0]['850WIDE']==4))\
-            &(data[0]['24MICRON']==0)&(data[0]['Radio_excess']!=0)
-    SSFR(axs_list,'QG', MASK1,'C3')
+    maskQG = MaskAllQG(0) & Mask_nonSMG(0) & Mask_nonIRB(0)
+    SSFR(axs_list,'QG', maskQG,'C3','o')
     
-    MASK1 = ((data[0]['850WIDE']==0)|(data[0]['850WIDE']==4))\
-            &( (data[0]['24MICRON']==1)|(data[0]['Radio_excess']==0) )
-    SSFR(axs_list,'IR-bright QG', MASK1,'C4')
+    maskIRBQG = MaskAllQG(0) & Mask_nonSMG(0) & Mask_IRB(0)
+    SSFR(axs_list,'IR-bright QG', maskIRBQG,'C4','D')
     
     for i in range(5):
         axs_list[i].set_xlim([9.3, 11.7])
         axs_list[i].set_ylim([-1.5, 3.1])
     
+    '''
     #plot 450                     
                      
     SFRerr_low = np.log10( 3.4e10*1.7e-10 ) - np.log10( (3.4e10-3.4e10/4.2)*1.7e-10 )
@@ -589,7 +631,7 @@ def PlotSSFR():
                         
         axs_list[i].errorbar(10.7,np.log10(6.4e8*1.7e-10),xerr=0.1,yerr=0.7,uplims=True,\
                                color='C6',alpha=0.8)
-    
+    '''
     
     #plot Man+2016
     Man_QG_y = [[0.7,0.8,0.5,0.3],[3.4,3.1,2.1,1.7],[8.1,5.8,4.9,2.0],
@@ -604,8 +646,8 @@ def PlotSSFR():
     Man_x = [11.2,10.8,10.4,10.0]
     for i in range(5):
         axs_list[i].scatter(Man_x,np.log10(Man_QG_y[i]),25,color='r',alpha=0.2,label="Man+2016: QG")
-        axs_list[i].scatter(Man_x,np.log10(Man_IRBQG_y[i]),25,color='C4',alpha=0.2,label="Man+2016: IR-bright QG")
-        axs_list[i].scatter(Man_x,np.log10(Man_SFG_y[i]),25,color='b',alpha=0.2,label="Man+2016: SFG")
+        axs_list[i].scatter(Man_x,np.log10(Man_IRBQG_y[i]),25,color='C4',alpha=0.2,label="Man+2016: IR-bright QG",marker='D')
+        axs_list[i].scatter(Man_x,np.log10(Man_SFG_y[i]),25,color='b',alpha=0.2,label="Man+2016: SFG",marker='s')
     
     #plot MS from Speagle+2014
     z = ["0.35","0.8","1.2","1.65","2.4"]
@@ -639,9 +681,12 @@ def PlotSSFR():
    
     fig.text(0.5, 0.04, 'log( stellar mass($M_{\odot}$) )', ha='center', fontdict = {'fontsize' : 14})
     fig.text(0.06, 0.5, 'log( SFR($M_{\odot}$/yr) )', va='center', rotation='vertical', fontdict = {'fontsize' : 14})
+    
+    fig.savefig('SSFR.png', bbox_inches = 'tight', format='png', dpi=1200)
+    
     return
 
-def SSFR(axs_list,title, MASK1, inputcolor):
+def SSFR(axs_list,title, MASK1, inputcolor,inputmarker):
 
     MASK = MASK1 & MASK2 & MASK3
     
@@ -654,23 +699,26 @@ def SSFR(axs_list,title, MASK1, inputcolor):
             #mean_mass,SFR,masserr_up,masserr_low = taskSSFR(z_list[i]&m_list&MASK)
                 #ax_list[i].errorbar(mean_mass, SFR,xerr=np.array([[masserr_low,masserr_up]]).T,color=inputcolor,alpha=0.5)
             if(i==1)&(j==1):
+                '''
                 if (LIR_limitmask_WH[LIR_iter-1]==1):
                     axs_list[i].errorbar(mean_mass,SFR,yerr=0.7,uplims=True,\
                            color=inputcolor,alpha=0.8)
-
-                else:
+                '''
+                if (LIR_limitmask_WH[LIR_iter-1]==0):
                     axs_list[i].scatter(mean_mass,SFR,60,\
-                           color=inputcolor,alpha=0.8,label=title)
+                           color=inputcolor,alpha=0.8,label=title,marker=inputmarker)
                     axs_list[i].errorbar(mean_mass, SFR,yerr=np.array([[SFRerr_low,SFRerr_up]]).T,
                            capsize=5,color=inputcolor)
             else:
                 if (LIR_limitmask_WH[LIR_iter-1]==1):
-                    axs_list[i].errorbar(mean_mass,SFR,xerr=0.1,yerr=0.7,uplims=True,\
-                           color=inputcolor,alpha=0.8)
+                    axs_list[i].scatter(mean_mass,SFR,60,\
+                           color=inputcolor,alpha=0.8,marker=inputmarker)
+                    axs_list[i].errorbar(mean_mass,SFR,yerr=0.7,uplims=True,\
+                           color=inputcolor,alpha=0.8)#,xerr=0.1
                     
                 else:
                     axs_list[i].scatter(mean_mass,SFR,60,\
-                           color=inputcolor,alpha=0.8)
+                           color=inputcolor,alpha=0.8,marker=inputmarker)
                     axs_list[i].errorbar(mean_mass, SFR,yerr=np.array([[SFRerr_low,SFRerr_up]]).T,
                            capsize=5,color=inputcolor)
     return
@@ -1061,9 +1109,9 @@ LIR_iter = 0
 
 
 
-PrintStacking()
+#PrintStacking()
 
-#PlotSSFR()
+PlotSSFR()
 
 #PlotSSFR850450()
 #PlotSSFR850450_tick()
@@ -1072,6 +1120,27 @@ PrintStacking()
 #OutputStackingCat()
 
 
+###### 450
+
+###read image file
+path  = "/Users/yuhsuan/Documents/research/05WH/data/COSMOS/"
+IMAGE = path+'04_COSMOS450_850/STUDIES/STUDIES+S2CLS+Casey_450_mf.fits'
+RMS   = path+'04_COSMOS450_850/STUDIES/STUDIES+S2CLS+Casey_450_mf_rms.fits'
+image_data, wcs = ReadImage(IMAGE,1)
+rms_data        = ReadImage(RMS,0)
+
+###set shreshold
+SHRESHOLD = 3.0
+
+if   ( SHRESHOLD==10000.0 ):  MEAN, SIGMA =  0.000, 2.414
+elif ( SHRESHOLD==3.5     ):  MEAN, SIGMA = -0.126, 2.073
+elif ( SHRESHOLD==3.0     ):  MEAN, SIGMA = -0.153, 2.005
+elif ( SHRESHOLD==2.0     ):  MEAN, SIGMA = -0.290, 1.931
+
+CENTER_RA,CENTER_DEC = '10h00m25.0s', '2d24m22.0s'
+RADIUS               = 0.2*u.degree
+
+#PrintStackingSimple()
 
 time2 = time.time()
 print 'done! time :', time2-time1 , 'sec'
