@@ -610,7 +610,7 @@ def PlotSSFR():
     axs_list = [ax1,ax2,ax3,ax4,ax5]
     
     maskQG = MaskAllQG(0) & Mask_nonSMG(0) & Mask_nonIRB(0)
-    SSFR(axs_list,'QG', maskQG,'C3','o')
+    SSFR(axs_list,'IR-faint QG', maskQG,'C3','o')
     
     maskIRBQG = MaskAllQG(0) & Mask_nonSMG(0) & Mask_IRB(0)
     SSFR(axs_list,'IR-bright QG', maskIRBQG,'C4','D')
@@ -645,7 +645,7 @@ def PlotSSFR():
                   (69.2*1678.0+91.2*885.0)/(1678.0+886.0),1e-10,1e-10]]
     Man_x = [11.2,10.8,10.4,10.0]
     for i in range(5):
-        axs_list[i].scatter(Man_x,np.log10(Man_QG_y[i]),25,color='r',alpha=0.2,label="Man+2016: QG")
+        axs_list[i].scatter(Man_x,np.log10(Man_QG_y[i]),25,color='r',alpha=0.2,label="Man+2016: IR-faint QG")
         axs_list[i].scatter(Man_x,np.log10(Man_IRBQG_y[i]),25,color='C4',alpha=0.2,label="Man+2016: IR-bright QG",marker='D')
         axs_list[i].scatter(Man_x,np.log10(Man_SFG_y[i]),25,color='b',alpha=0.2,label="Man+2016: SFG",marker='s')
     
@@ -682,7 +682,7 @@ def PlotSSFR():
     fig.text(0.5, 0.04, 'log( stellar mass($M_{\odot}$) )', ha='center', fontdict = {'fontsize' : 14})
     fig.text(0.06, 0.5, 'log( SFR($M_{\odot}$/yr) )', va='center', rotation='vertical', fontdict = {'fontsize' : 14})
     
-    fig.savefig('SSFR.png', bbox_inches = 'tight', format='png', dpi=1200)
+    fig.savefig('SSFR.png', bbox_inches = 'tight', format='png', dpi=400)
     
     return
 
@@ -986,6 +986,26 @@ def PlotSSFR850450_tick2():
     
     return
 
+def PlotLensed():
+    
+    hdu_list = fits.open("/Users/yuhsuan/Desktop/COSMOS.Ks.original_psf.v5.fits")
+    #hdu_list.info()
+    image_data = hdu_list[0].data
+    wcs = WCS(hdu_list[0].header).celestial
+  
+    x1, y1 = wcs.all_world2pix([[150.1001356, 2.2971499]], 0)[0]
+    imagebox = np.copy(image_data[int(y1)-15:int(y1)+16:1,int(x1)-15:int(x1)+16:1])
+    
+    
+    fig, ax = plt.subplots()
+    plt.imshow(imagebox, cmap='gray', vmin=-2000, vmax=2500)
+    plt.colorbar()
+    plt.gca().invert_xaxis()
+    circle1 = plt.Circle( (15,15), 7.0, edgecolor="k", facecolor='none' )
+    ax.add_artist(circle1)
+    
+    return
+
 # =============================================================================
 # main code
 # =============================================================================
@@ -1111,13 +1131,15 @@ LIR_iter = 0
 
 #PrintStacking()
 
-PlotSSFR()
+#PlotSSFR()
 
 #PlotSSFR850450()
 #PlotSSFR850450_tick()
 #PlotSSFR850450_tick2()
 
 #OutputStackingCat()
+
+PlotLensed()
 
 
 ###### 450
