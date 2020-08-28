@@ -52,7 +52,7 @@ def Mask_error( mode, up, index ):
         return mask_V_errorV | mask_ip_error | mask_J_error | mask_Ks_error
     
     if mode==2:
-        return (data[index][V_error]<up) & (data[index][V_error]>0)
+        return (data[index][Ks_error]<up) & (data[index][Ks_error]>0)
     
     if mode==3:
         return (data[index][Ks_mag]<24)
@@ -65,7 +65,10 @@ def Mask_class_star( index ):
     return ( data[index][class_star]==0 ) | ( data[index][class_star]==2 )
 
 def MaskAll( index ):
-    return Mask_M(index) & Mask_error( 1, 0.1, index ) & Mask_photoz( index ) & Mask_class_star( index )
+    return Mask_M( index ) & Mask_error( 1, 0.1, index ) & Mask_photoz( index ) & Mask_class_star( index )
+def MaskAll_oneband( index ):
+    return Mask_M( index ) & Mask_error( 2, 0.2, index ) & Mask_photoz( index ) & Mask_class_star( index )
+
 
 
 def Mask_classQG   ( index ): return ( data[index][class_SFG]==0 )
@@ -74,7 +77,14 @@ def Mask_myclassQG ( index ): return ( y[index]> 3.1 ) & ( y[index]> 3.0*x[index
 def Mask_myclassSFG( index ): return ( y[index]<=3.1 ) | ( y[index]<=3.0*x[index]+1.0 )
 
 def MaskAllQG  ( index ): return MaskAll( index ) & Mask_myclassQG( index )
-def Mask_nonSMG( index ): return ( data[index]['450NARROW'] ==0 ) | ( data[index]['450NARROW']     ==7 )
+def MaskAllQG_oneband  ( index ): return MaskAll_oneband( index ) & Mask_myclassQG( index )
+
+def Mask_nonSMG_850( index ): return ( data[index]['850WIDE'  ] ==0 ) | ( data[index]['850WIDE'  ] ==7 )
+def Mask_nonSMG_450( index ): return ( data[index]['450NARROW'] ==0 ) | ( data[index]['450NARROW'] ==7 )
+def Mask_nonSMG_850_oneband( index ): return ( data[index]['850WIDE_ONEBAND'  ] ==0 ) | ( data[index]['850WIDE_ONEBAND'  ] ==7 )
+def Mask_nonSMG_450_oneband( index ): return ( data[index]['450NARROW_ONEBAND'] ==0 ) | ( data[index]['450NARROW_ONEBAND'] ==7 )
+
+
 def Mask_nonIRB( index ): return ( data[index]['24MICRON']==0 ) & ( data[index]['Radio_excess']!=0 ) #radio excess = -99 or 1
 def Mask_IRB   ( index ): return ( data[index]['24MICRON']==1 ) | ( data[index]['Radio_excess']==0 ) 
 
@@ -84,6 +94,15 @@ def Mask_z   ( index, low, high ): return ( data[index][photoz]<=high ) & ( data
 def MaskRegion( mask,inputra,inputdec,inputradius ): #mask is not list
     
     c0     = SkyCoord( ra=data[0][mask][ra[0]], dec=data[0][mask][dec[0]] )
+    center = SkyCoord( inputra, inputdec, frame='fk5' )
+    radius = inputradius
+    sep    = center.separation( c0 )
+    
+    return sep<=radius
+
+def MaskRegion_nomask( inputra,inputdec,inputradius ): 
+    
+    c0     = SkyCoord( ra=data[0][ra[0]], dec=data[0][dec[0]] )
     center = SkyCoord( inputra, inputdec, frame='fk5' )
     radius = inputradius
     sep    = center.separation( c0 )
@@ -266,7 +285,7 @@ def task(TITLE,MASK):
 def taskprint(TITLE,MASK):
     
     ###candidate within selected region
-    data_tmp = data[0][MASK][ MaskRegion(MASK,CENTER_RA, CENTER_DEC, RADIUS) ]
+    data_tmp = data[0][MASK]  
     
     ###stack image  
     middlepix, cut_num = OnePointStacking( data_tmp, wcs, image_data, rms_data )
@@ -315,6 +334,44 @@ def taskprint(TITLE,MASK):
 
     
     return
+
+def taskprint_latex(TITLE,MASK):
+    
+    ###candidate within selected region
+    data_tmp = data[0][MASK]  
+    
+    ###stack image  
+    middlepix, cut_num = OnePointStacking( data_tmp, wcs, image_data, rms_data )
+    
+    mean_flux = middlepix - MEAN
+    num       = len( data_tmp ) - cut_num
+    median_z  = MedianRedshift( data_tmp )
+    mean_mass = MeanMass      ( data_tmp )
+    
+    global LIR_iter
+        
+    L_IR = LIR_WH[LIR_iter]
+    
+    LIR_iter+=1
+    
+    SFR = L_IR*1.7e-10
+    
+    if (mean_flux<=0.0):
+       #### mean_mass = 0.0 
+        L_IR = 0.0
+        SFR = 0.0
+    
+    print TITLE \
+          +" & "+( "%.1f" % np.log10( mean_mass )   ) \
+          +" & "+( "%.1f" % median_z   ) \
+          +" & "+str( num ) \
+          +" & "+("%.2f" % mean_flux) + "$\pm$" + ("%.2f" % (SIGMA/np.sqrt(num)))  \
+          +" & "+( "%.1f" % (mean_flux/SIGMA*np.sqrt(num)) )\
+          +" & "+("%.1E" %  L_IR) \
+          +" & "+( "%.1f"  % SFR  )+"\\\\"         
+
+    #All QG                 & 10.7 & 0.9 & 17535 & 0.06$\pm$0.01 & 6.2 & 1.0$\times10^{10}$ & 1.8\\
+    return
     
 
 def taskSSFR(MASK):
@@ -341,6 +398,7 @@ def taskSSFR_WH(MASK):
     data_tmp = data[0][MASK]
     
     global LIR_iter
+    
     mean_mass = np.log10( MeanMass(data_tmp) )
     SFR = np.log10( LIR_WH[LIR_iter]*1.7e-10 )
     SFRerr_up = np.log10( (LIR_WH[LIR_iter]+LIR_errlen_WH[LIR_iter])*1.7e-10 )\
@@ -350,30 +408,10 @@ def taskSSFR_WH(MASK):
     else:
         SFRerr_low = np.log10( LIR_WH[LIR_iter]*1.7e-10 )\
                      - np.log10( (LIR_WH[LIR_iter]-LIR_errlen_WH[LIR_iter])*1.7e-10 )
-        
+    print LIR_iter, LIR_WH[LIR_iter], SFR
     LIR_iter+=1
     
     return mean_mass, SFR, SFRerr_low, SFRerr_up
-
-def taskCat(MASK):
-    
-    ###candidate within selected region
-    data_tmp = data[0][MASK]
-    
-    # stack image #
-    
-    ###read image file
-    image_data,wcs = ReadImage(IMAGE,1)
-    rms_data = ReadImage(RMS,0)
-    
-    middlepix = \
-    OnePointStacking(data_tmp,wcs,image_data,rms_data)
-    
-    mean_flux = middlepix-MEAN
-    mean_flux_err = SIGMA/np.sqrt(len(data_tmp))
-    
-    return mean_flux, mean_flux_err
-    
 
 def RandomStacking(inputpos_num,wcs,image_data,rms_data,ra_min,ra_max,dec_min,dec_max):
     random_ra_list = []
@@ -494,15 +532,17 @@ def RandomStackingTask():
 
 def StackBin( mask ):
     
-    z_list = [ "z <= 0.5", "0.5 < z <= 1.0", "1.0 < z <= 1.5", "1.5 < z <= 2.0", "z > 2.0" ]
+    #z_list = [ "z <= 0.5", "0.5 < z <= 1.0", "1.0 < z <= 1.5", "1.5 < z <= 2.0", "z > 2.0" ]
+    #z_mask_list = [ Mask_z(0,0,0.5), Mask_z(0,0.5,1.0), Mask_z(0,1.0,1.5), 
+    #                Mask_z(0,1.5,2.0), Mask_z(0,2.0,100.0) ]
+    z_list = [ "z <= 0.5", "0.5 < z <= 1.0", "1.0 < z <= 1.5", "1.5 < z <= 2.0", "2.0 < z <= 2.5", "z > 2.5" ]
     z_mask_list = [ Mask_z(0,0,0.5), Mask_z(0,0.5,1.0), Mask_z(0,1.0,1.5), 
-                    Mask_z(0,1.5,2.0), Mask_z(0,2.0,100.0) ]
-    
-    for i in range(5):
+                    Mask_z(0,1.5,2.0), Mask_z(0,2.0,2.5), Mask_z(0,2.5,100.0) ]
+    for i in range( len(z_list) ):
         print
         print z_list[i]
-        taskprint( 'logM* <= 10.5', mask & z_mask_list[i] & Mask_mass(0,0   ,10.5) )
-        taskprint( 'logM* > 10.5',  mask & z_mask_list[i] & Mask_mass(0,10.5,100 ) )
+        taskprint_latex( 'logM* <= 10.5', mask & z_mask_list[i] & Mask_mass(0,0   ,10.5) )
+        taskprint_latex( 'logM* > 10.5',  mask & z_mask_list[i] & Mask_mass(0,10.5,100 ) )
     
     return
 
@@ -523,32 +563,32 @@ def PrintStacking():
     
     
     #QGs without 850um detection    #STACK_MAX,STACK_MIN = -0.1,0.1
-    taskprint( "All QG",          MaskAllQG(0) & Mask_nonSMG(0)                                )
+    taskprint( "All QG",          MaskAllQG(0) & Mask_nonSMG_850(0)                                )
     
     #QGs with 24um detection        #STACK_MAX,STACK_MIN = -0.35,0.35
-    taskprint( "24-micron ctp.",  MaskAllQG(0) & Mask_nonSMG(0) & (data[0]['24MICRON']    ==1) )
+    taskprint( "24-micron ctp.",  MaskAllQG(0) & Mask_nonSMG_850(0) & (data[0]['24MICRON']    ==1) )
     
     #QGs with 3GHz detection        #STACK_MAX,STACK_MIN = -0.2,0.2
-    taskprint( "3-GHz ctp.",      MaskAllQG(0) & Mask_nonSMG(0) & (data[0]['3GHZ']        ==1) )
+    taskprint( "3-GHz ctp.",      MaskAllQG(0) & Mask_nonSMG_850(0) & (data[0]['3GHZ']        ==1) )
     
     #QGs with label "SFG"           #STACK_MAX,STACK_MIN = -0.6,0.6
-    taskprint( "3-GHz ctp.: SFG", MaskAllQG(0) & Mask_nonSMG(0) & (data[0]['Radio_excess']==0) )
+    taskprint( "3-GHz ctp.: SFG", MaskAllQG(0) & Mask_nonSMG_850(0) & (data[0]['Radio_excess']==0) )
     
     #QGs with label "AGN"           #STACK_MAX,STACK_MIN = -0.2,0.2
-    taskprint( "3-GHz ctp.: AGN", MaskAllQG(0) & Mask_nonSMG(0) & (data[0]['Radio_excess']==1) )  
+    taskprint( "3-GHz ctp.: AGN", MaskAllQG(0) & Mask_nonSMG_850(0) & (data[0]['Radio_excess']==1) )  
     
     
     print "-"*dashnum
     
-    maskQG = MaskAllQG(0) & Mask_nonSMG(0) & Mask_nonIRB(0)
-    taskprint( "'QG'", maskQG )
+    maskQG = MaskAllQG(0) & Mask_nonSMG_850(0) & Mask_nonIRB(0)
+    taskprint( "IR-faint QG", maskQG )
     StackBin( maskQG )  
 
     
     print "-"*dashnum
     
-    maskIRBQG = MaskAllQG(0) & Mask_nonSMG(0) & Mask_IRB(0)
-    taskprint( "'IR-bright QG'", maskIRBQG )
+    maskIRBQG = MaskAllQG(0) & Mask_nonSMG_850(0) & Mask_IRB(0)
+    taskprint( "IR-bright QG", maskIRBQG )
     StackBin( maskIRBQG )
     
     
@@ -557,7 +597,7 @@ def PrintStacking():
     
     return
 
-def PrintStackingSimple():
+def PrintStackingOneBand():
     
     if (SHRESHOLD==10000.0):
         print "shreshold = -    mean =",MEAN,"   sigma =",SIGMA,"/sqrt(N)"
@@ -574,25 +614,33 @@ def PrintStackingSimple():
     
     
     #QGs without 850um detection    #STACK_MAX,STACK_MIN = -0.1,0.1
-    taskprint( "All QG",          MaskAllQG(0) & Mask_nonSMG(0)                                )
+    taskprint_latex( "All QG",          MaskAllQG_oneband(0) & Mask_nonSMG_850_oneband(0)                                )
     
     #QGs with 24um detection        #STACK_MAX,STACK_MIN = -0.35,0.35
-    taskprint( "24-micron ctp.",  MaskAllQG(0) & Mask_nonSMG(0) & (data[0]['24MICRON']    ==1) )
+    taskprint_latex( "24-micron ctp.",  MaskAllQG_oneband(0) & Mask_nonSMG_850_oneband(0) & (data[0]['24MICRON']    ==1) )
     
     #QGs with 3GHz detection        #STACK_MAX,STACK_MIN = -0.2,0.2
-    taskprint( "3-GHz ctp.",      MaskAllQG(0) & Mask_nonSMG(0) & (data[0]['3GHZ']        ==1) )
+    taskprint_latex( "3-GHz ctp.",      MaskAllQG_oneband(0) & Mask_nonSMG_850_oneband(0) & (data[0]['3GHZ']        ==1) )
     
     #QGs with label "SFG"           #STACK_MAX,STACK_MIN = -0.6,0.6
-    taskprint( "3-GHz ctp.: SFG", MaskAllQG(0) & Mask_nonSMG(0) & (data[0]['Radio_excess']==0) )
+    taskprint_latex( "3-GHz ctp.: SFG", MaskAllQG_oneband(0) & Mask_nonSMG_850_oneband(0) & (data[0]['Radio_excess']==0) )
     
     #QGs with label "AGN"           #STACK_MAX,STACK_MIN = -0.2,0.2
-    taskprint( "3-GHz ctp.: AGN", MaskAllQG(0) & Mask_nonSMG(0) & (data[0]['Radio_excess']==1) )  
-
-    maskQG = MaskAllQG(0) & Mask_nonSMG(0) & Mask_nonIRB(0)
-    taskprint( "'QG'", maskQG )
+    taskprint_latex( "3-GHz ctp.: AGN", MaskAllQG_oneband(0) & Mask_nonSMG_850_oneband(0) & (data[0]['Radio_excess']==1) )  
     
-    maskIRBQG = MaskAllQG(0) & Mask_nonSMG(0) & Mask_IRB(0)
-    taskprint( "'IR-bright QG'", maskIRBQG )
+    
+    print "-"*dashnum
+    
+    maskQG = MaskAllQG_oneband(0) & Mask_nonSMG_850_oneband(0) & Mask_nonIRB(0)
+    taskprint_latex( "IR-faint QG", maskQG )
+    StackBin( maskQG )  
+
+    
+    print "-"*dashnum
+    
+    maskIRBQG = MaskAllQG_oneband(0) & Mask_nonSMG_850_oneband(0) & Mask_IRB(0)
+    taskprint_latex( "IR-bright QG", maskIRBQG )
+    StackBin( maskIRBQG )
     
     
     print "-"*dashnum
@@ -600,110 +648,180 @@ def PrintStackingSimple():
     
     return
 
-def PlotSSFR():
+def Stack_test():
+    
+    if (SHRESHOLD==10000.0):
+        print "shreshold = -    mean =",MEAN,"   sigma =",SIGMA,"/sqrt(N)"
+    else:
+        print "shreshold =",SHRESHOLD,"    mean =",MEAN,"   sigma =",SIGMA,"/sqrt(N)"
+    
+    dashnum = 85
+    
+    print "-"*dashnum
+    print '{:<16s}{:<10s}{:<10s}{:<8s}{:^10s}{:>6s}{:>10s}{:>8s}{:>6s}'.format(
+    "Groups","Mean_M*","Median_z","Number","Mean_flux","SNR","L_IR","SFR","sSFR")
+    
+    print "-"*dashnum
+    
+    #maskall = MaskAllQG(0)
+    maskall = Mask_M(0) & ( data[0][Ks_error]<0.2 ) & ( data[0][Ks_error]>0 ) \
+                & Mask_photoz(0) & Mask_class_star(0) & Mask_myclassQG(0)
+    taskprint( "All QG", maskall )
+    StackBin( maskall )
+    
+    print "-"*dashnum
+    print
+    
+    return
+    
 
-    fig, axs = plt.subplots(2, 3,figsize=(10,6), sharex=True, sharey=True,
-                        gridspec_kw={'hspace': 0, 'wspace': 0})
-    axs[-1, -1].axis('off')
+def PrintStacking450():
     
-    (ax1,ax2,ax3),(ax4,ax5,ax6) = axs
-    axs_list = [ax1,ax2,ax3,ax4,ax5]
+    if (SHRESHOLD==10000.0):
+        print "shreshold = -    mean =",MEAN,"   sigma =",SIGMA,"/sqrt(N)"
+    else:
+        print "shreshold =",SHRESHOLD,"    mean =",MEAN,"   sigma =",SIGMA,"/sqrt(N)"
     
-    maskQG = MaskAllQG(0) & Mask_nonSMG(0) & Mask_nonIRB(0)
-    SSFR(axs_list,'IR-faint QG', maskQG,'C3','o')
+    dashnum = 85
     
-    maskIRBQG = MaskAllQG(0) & Mask_nonSMG(0) & Mask_IRB(0)
-    SSFR(axs_list,'IR-bright QG', maskIRBQG,'C4','D')
+    print "-"*dashnum
+    print '{:<16s}{:<10s}{:<10s}{:<8s}{:^10s}{:>6s}{:>10s}{:>8s}{:>6s}'.format(
+    "Groups","Mean_M*","Median_z","Number","Mean_flux","SNR","L_IR","SFR","sSFR")
     
-    for i in range(5):
-        axs_list[i].set_xlim([9.3, 11.7])
-        axs_list[i].set_ylim([-1.5, 3.1])
+    print "-"*dashnum
     
-    '''
-    #plot 450                     
-                     
-    SFRerr_low = np.log10( 3.4e10*1.7e-10 ) - np.log10( (3.4e10-3.4e10/4.2)*1.7e-10 )
-    SFRerr_up = np.log10( (3.4e10+3.4e10/4.2)*1.7e-10 ) - np.log10( 3.4e10*1.7e-10 )
-    for i in range(5):
-        axs_list[i].scatter(11.0,np.log10(3.4e10*1.7e-10),60, color='C6',alpha=0.8)
-        axs_list[i].errorbar(11.0, np.log10(3.4e10*1.7e-10),yerr=np.array([[SFRerr_low,SFRerr_up]]).T,
-                               capsize=5,color='C6')
-                        
-        axs_list[i].errorbar(10.7,np.log10(6.4e8*1.7e-10),xerr=0.1,yerr=0.7,uplims=True,\
-                               color='C6',alpha=0.8)
-    '''
+    Mask_450Region = MaskRegion_nomask(CENTER_RA, CENTER_DEC, RADIUS)
     
-    #plot Man+2016
-    Man_QG_y = [[0.7,0.8,0.5,0.3],[3.4,3.1,2.1,1.7],[8.1,5.8,4.9,2.0],
-                [14.8,10.2,11.7,1e-10],[(50.1*193.0+35.5*63.0)/(193.0+63.0),36.3,1e-10,1e-10]]
-    Man_IRBQG_y = [[1e-10,1e-10,1e-10,1e-10],[58.9,91.2,1e-10,1e-10],
-                   [89.1,85.1,89.1,1e-10],[134.9,131.8,95.5,1e-10],
-                   [(269.2*29.0+331.1*14.0)/(29.0+14.0),218.8,1e-10,1e-10]]
-    Man_SFG_y = [[8.1,6.3,4.0,2.0],[23.4,17.8,12.3,5.8],[55.0,39.8,20.9,10.7],
-                 [87.1,47.9,27.5,1e-10],
-                 [(147.9*624.0+204.2*321.0)/(624.0+321.0),
-                  (69.2*1678.0+91.2*885.0)/(1678.0+886.0),1e-10,1e-10]]
+    #QGs without 850um detection    #STACK_MAX,STACK_MIN = -0.1,0.1
+    taskprint( "All QG",          MaskAllQG(0) & Mask_nonSMG_450(0) & Mask_450Region                                )
+    
+    #QGs with 24um detection        #STACK_MAX,STACK_MIN = -0.35,0.35
+    taskprint( "24-micron ctp.",  MaskAllQG(0) & Mask_nonSMG_450(0) & (data[0]['24MICRON']    ==1) & Mask_450Region )
+    
+    #QGs with 3GHz detection        #STACK_MAX,STACK_MIN = -0.2,0.2
+    taskprint( "3-GHz ctp.",      MaskAllQG(0) & Mask_nonSMG_450(0) & (data[0]['3GHZ']        ==1) & Mask_450Region )
+    
+    #QGs with label "SFG"           #STACK_MAX,STACK_MIN = -0.6,0.6
+    taskprint( "3-GHz ctp.: SFG", MaskAllQG(0) & Mask_nonSMG_450(0) & (data[0]['Radio_excess']==0) & Mask_450Region )
+    
+    #QGs with label "AGN"           #STACK_MAX,STACK_MIN = -0.2,0.2
+    taskprint( "3-GHz ctp.: AGN", MaskAllQG(0) & Mask_nonSMG_450(0) & (data[0]['Radio_excess']==1) & Mask_450Region )  
+
+    maskQG = MaskAllQG(0) & Mask_nonSMG_450(0) & Mask_nonIRB(0) & Mask_450Region
+    taskprint( "IR-faint QG", maskQG )
+    
+    maskIRBQG = MaskAllQG(0) & Mask_nonSMG_450(0) & Mask_IRB(0) & Mask_450Region
+    taskprint( "IR-bright QG", maskIRBQG )
+    
+    
+    print "-"*dashnum
+    print
+    
+    return
+
+def PrintStacking450OneBand():
+    
+    if (SHRESHOLD==10000.0):
+        print "shreshold = -    mean =",MEAN,"   sigma =",SIGMA,"/sqrt(N)"
+    else:
+        print "shreshold =",SHRESHOLD,"    mean =",MEAN,"   sigma =",SIGMA,"/sqrt(N)"
+    
+    dashnum = 85
+    
+    print "-"*dashnum
+    print '{:<16s}{:<10s}{:<10s}{:<8s}{:^10s}{:>6s}{:>10s}{:>8s}{:>6s}'.format(
+    "Groups","Mean_M*","Median_z","Number","Mean_flux","SNR","L_IR","SFR","sSFR")
+    
+    print "-"*dashnum
+    
+    global LIR_iter
+    LIR_iter = 31
+    
+    Mask_450Region = MaskRegion_nomask(CENTER_RA, CENTER_DEC, RADIUS)
+    
+    #QGs without 850um detection    #STACK_MAX,STACK_MIN = -0.1,0.1
+    taskprint_latex( "All QG",          MaskAllQG_oneband(0) & Mask_nonSMG_450_oneband(0) & Mask_450Region                                )
+    
+    #QGs with 24um detection        #STACK_MAX,STACK_MIN = -0.35,0.35
+    taskprint_latex( "24-micron ctp.",  MaskAllQG_oneband(0) & Mask_nonSMG_450_oneband(0) & (data[0]['24MICRON']    ==1) & Mask_450Region )
+    
+    #QGs with 3GHz detection        #STACK_MAX,STACK_MIN = -0.2,0.2
+    taskprint_latex( "3-GHz ctp.",      MaskAllQG_oneband(0) & Mask_nonSMG_450_oneband(0) & (data[0]['3GHZ']        ==1) & Mask_450Region )
+    
+    #QGs with label "SFG"           #STACK_MAX,STACK_MIN = -0.6,0.6
+    taskprint_latex( "3-GHz ctp.: SFG", MaskAllQG_oneband(0) & Mask_nonSMG_450_oneband(0) & (data[0]['Radio_excess']==0) & Mask_450Region )
+    
+    #QGs with label "AGN"           #STACK_MAX,STACK_MIN = -0.2,0.2
+    taskprint_latex( "3-GHz ctp.: AGN", MaskAllQG_oneband(0) & Mask_nonSMG_450_oneband(0) & (data[0]['Radio_excess']==1) & Mask_450Region )  
+
+    maskQG = MaskAllQG_oneband(0) & Mask_nonSMG_450_oneband(0) & Mask_nonIRB(0) & Mask_450Region
+    taskprint_latex( "IR-faint QG", maskQG )
+    
+    maskIRBQG = MaskAllQG_oneband(0) & Mask_nonSMG_450_oneband(0) & Mask_IRB(0) & Mask_450Region
+    taskprint_latex( "IR-bright QG", maskIRBQG )
+    
+    
+    print "-"*dashnum
+    print
+    
+    return
+
+def PlotMan2016( axs_list ):
+    
+    Man_QG_y = [ [0.7,0.8,0.5,0.3],      [3.4,3.1,2.1,1.7],
+                 [8.1,5.8,4.9,2.0],      [14.8,10.2,11.7,1e-10],
+                 [50.1,36.3,1e-10,1e-10],[35.5,1e-10,1e-10,1e-10]    ]
+    
+    Man_IRBQG_y = [ [1e-10,1e-10,1e-10,1e-10], [58.9,91.2,1e-10,1e-10],
+                    [89.1,85.1,89.1,1e-10],    [134.9,131.8,95.5,1e-10],
+                    [269.2,218.8,1e-10,1e-10], [331.1,1e-10,1e-10,1e-10]   ]
+    
+    Man_SFG_y = [ [8.1,6.3,4.0,2.0],       [23.4,17.8,12.3,5.8],
+                  [55.0,39.8,20.9,10.7],   [87.1,47.9,27.5,1e-10],
+                  [147.9,69.2,1e-10,1e-10],[204.2,91.2,1e-10,1e-10]   ]
+    
     Man_x = [11.2,10.8,10.4,10.0]
-    for i in range(5):
+    
+    for i in range(len(axs_list)):
         axs_list[i].scatter(Man_x,np.log10(Man_QG_y[i]),25,color='r',alpha=0.2,label="Man+2016: IR-faint QG")
         axs_list[i].scatter(Man_x,np.log10(Man_IRBQG_y[i]),25,color='C4',alpha=0.2,label="Man+2016: IR-bright QG",marker='D')
         axs_list[i].scatter(Man_x,np.log10(Man_SFG_y[i]),25,color='b',alpha=0.2,label="Man+2016: SFG",marker='s')
+        
+    return axs_list
+
+def PlotSpeagle2014( axs_list ):
     
-    #plot MS from Speagle+2014
-    z = ["0.35","0.8","1.2","1.65","2.4"]
-    z_range = ["0 < z "+u"\u2264"+" 0.5","0.5 < z "+u"\u2264"+" 1.0",\
-               "1.0 < z "+u"\u2264"+" 1.5","1.5 < z "+u"\u2264"+" 2.0","z > 2.0"]
     cosmo = FlatLambdaCDM(H0=70, Om0=0.3)
-    t = cosmo.age([0.35,0.8,1.2,1.65,2.4]).value
+    t = cosmo.age(z).value
     #t = [9.5874,6.6247,5.0223,3.6477,2.0]
     x = np.linspace(9.3, 11.7, 400)
-    for i in range(5):
+    for i in range(len(axs_list)):
         y = (0.84 - 0.026*t[i])*x - (6.51-0.11*t[i])
         axs_list[i].plot(x,y,'k',label="Speagle+2014")
         axs_list[i].fill_between(x, y-0.9, y+0.9,color='k',alpha=0.1)
         axs_list[i].fill_between(x, y-0.6, y+0.6,color='k',alpha=0.1)
         axs_list[i].fill_between(x, y-0.3, y+0.3,color='k',alpha=0.1)
+        #axs_list[i].annotate(z_range[i], xy=(0.08, 0.85), xycoords='axes fraction', fontsize=12,\
+        #             xytext=(-5, 5), textcoords='offset points',\
+        #             ha='left', va='bottom')
         axs_list[i].annotate(z_range[i], xy=(1, 0), xycoords='axes fraction', fontsize=12,\
                      xytext=(-5, 5), textcoords='offset points',\
                      ha='right', va='bottom')
-        axs_list[i].text(9.5,(0.84 - 0.026*t[i])*9.5 - (6.51-0.11*t[i])+0.45,"z="+z[i],rotation=180/np.pi*np.arctan(0.84-0.026*t[i])-20)
+        axs_list[i].text(9.5,(0.84 - 0.026*t[i])*9.5 - (6.51-0.11*t[i])+0.45,"z="+str(z[i]),rotation=180/np.pi*np.arctan(0.84-0.026*t[i])-20)
     
+    return axs_list
 
-    
-    #plot legend
-    axs_list[1].legend(loc='lower left', bbox_to_anchor= (1.1, -0.9), ncol=1, 
-            borderaxespad=0, frameon=False)
-
-    
-    for ax in axs.flat:
-        ax.label_outer()
-        
-   
-    fig.text(0.5, 0.04, 'log( stellar mass($M_{\odot}$) )', ha='center', fontdict = {'fontsize' : 14})
-    fig.text(0.06, 0.5, 'log( SFR($M_{\odot}$/yr) )', va='center', rotation='vertical', fontdict = {'fontsize' : 14})
-    
-    fig.savefig('SSFR.png', bbox_inches = 'tight', format='png', dpi=400)
-    
-    return
-
-def SSFR(axs_list,title, MASK1, inputcolor,inputmarker):
-
-    MASK = MASK1 & MASK2 & MASK3
+def SSFR( axs_list,title, MASK, inputcolor, inputmarker ):
     
     global LIR_iter
-    z_list = [Mask_z(0,0,0.5),Mask_z(0,0.5,1.0),Mask_z(0,1.0,1.5),Mask_z(0,1.5,2.0),Mask_z(0,2.0,100)]
-    m_list = [Mask_mass(0,0,10.5),Mask_mass(0,10.5,100)]
-    for i in range(5):
+
+    for i in range(len(z_list)):
         for j in range(2):
             mean_mass,SFR,SFRerr_low,SFRerr_up = taskSSFR_WH(z_list[i]&m_list[j]&MASK)
             #mean_mass,SFR,masserr_up,masserr_low = taskSSFR(z_list[i]&m_list&MASK)
                 #ax_list[i].errorbar(mean_mass, SFR,xerr=np.array([[masserr_low,masserr_up]]).T,color=inputcolor,alpha=0.5)
             if(i==1)&(j==1):
-                '''
-                if (LIR_limitmask_WH[LIR_iter-1]==1):
-                    axs_list[i].errorbar(mean_mass,SFR,yerr=0.7,uplims=True,\
-                           color=inputcolor,alpha=0.8)
-                '''
+                
                 if (LIR_limitmask_WH[LIR_iter-1]==0):
                     axs_list[i].scatter(mean_mass,SFR,60,\
                            color=inputcolor,alpha=0.8,label=title,marker=inputmarker)
@@ -723,56 +841,98 @@ def SSFR(axs_list,title, MASK1, inputcolor,inputmarker):
                            capsize=5,color=inputcolor)
     return
 
+def PlotSSFR( MASK, FLAG ):
 
+    ### set figure
+    fig, axs = plt.subplots(2, 3,figsize=(10,6), sharex=True, sharey=True,
+                        gridspec_kw={'hspace': 0, 'wspace': 0})
+    if ( FLAG==0 ): axs[-1, -1].axis('off')
+    
+    (ax1,ax2,ax3),(ax4,ax5,ax6) = axs
+    if ( FLAG==1 ): axs_list = [ax1,ax2,ax3,ax4,ax5,ax6]
+    else: axs_list = [ax1,ax2,ax3,ax4,ax5]
+    
+    ### plot QGs
+    global LIR_iter
+    if ( FLAG==1 ): LIR_iter = 6
+    maskQG =  MASK & Mask_nonIRB(0)
+    SSFR(axs_list,'IR-radio-faint QG', maskQG,'C3','o')
+    
+    if ( FLAG==1 ): LIR_iter = 19
+    maskIRBQG = MASK & Mask_IRB(0)
+    SSFR(axs_list,'IR-radio-bright QG', maskIRBQG,'C4','D')
+    
+    for i in range(len(axs_list)):
+        axs_list[i].set_xlim([9.3, 11.7])
+        axs_list[i].set_ylim([-1.5, 3.1])
+    
+    '''
+    #plot 450                     
+                     
+    SFRerr_low = np.log10( 3.4e10*1.7e-10 ) - np.log10( (3.4e10-3.4e10/4.2)*1.7e-10 )
+    SFRerr_up = np.log10( (3.4e10+3.4e10/4.2)*1.7e-10 ) - np.log10( 3.4e10*1.7e-10 )
+    for i in range(5):
+        axs_list[i].scatter(11.0,np.log10(3.4e10*1.7e-10),60, color='C6',alpha=0.8)
+        axs_list[i].errorbar(11.0, np.log10(3.4e10*1.7e-10),yerr=np.array([[SFRerr_low,SFRerr_up]]).T,
+                               capsize=5,color='C6')
+                        
+        axs_list[i].errorbar(10.7,np.log10(6.4e8*1.7e-10),xerr=0.1,yerr=0.7,uplims=True,\
+                               color='C6',alpha=0.8)
+    '''
+    
+    ### plot Man+2016
+    axs_list = PlotMan2016( axs_list )
+    
+    #### plot MS from Speagle+2014
+    axs_list = PlotSpeagle2014( axs_list )
 
-def OutputCat(column_name_list, column_list):
-    t = Table()
-    for i in range(len(column_name_list)):
-        t[column_name_list[i]] = column_list[i]
-    return t
+    
+    ### plot legend
+    if ( FLAG==0 ):
+        axs_list[1].legend(loc='lower left', bbox_to_anchor= (1.1, -0.9), ncol=1, 
+                borderaxespad=0, frameon=False)
+    else: axs_list[1].legend(loc='lower left', bbox_to_anchor= (2.1, 0.2), ncol=1, 
+                frameon=False,fontsize=12)
 
-def AddCat(OBJECT,MASK1,object_list,median_photoz,mean_mass,mean_flux,mean_flux_err):
     
-    MASK = MASK1 & MASK2 & MASK3
+    for ax in axs.flat:
+        ax.label_outer()       
+   
+    fig.text(0.5, 0.04, 'log( stellar mass($M_{\odot}$) )', ha='center', fontdict = {'fontsize' : 14})
+    fig.text(0.06, 0.5, 'log( SFR($M_{\odot}$/yr) )', va='center', rotation='vertical', fontdict = {'fontsize' : 14})
     
-    z_list = [Mask_z(0,0,0.5),Mask_z(0,0.5,1.0),Mask_z(0,1.0,1.5),Mask_z(0,1.5,100)]
-    m_list = [Mask_mass(0,0,10.5),Mask_mass(0,10.5,100)]
-    for i in range(4):
-        for j in range(2):
-                MASK_tmp = z_list[i]&m_list[j]&MASK
-                object_list.append(OBJECT)
-                median_photoz.append(round(MedianRedshift(data[0][MASK_tmp]),1))
-                mean_mass.append(round(np.log10(MeanMass(data[0][MASK_tmp])),1))
-                mean_flux_value,mean_flux_err_value = taskCat(MASK_tmp)
-                mean_flux.append(round(mean_flux_value,2))
-                mean_flux_err.append(round(mean_flux_err_value,2))
-    return object_list,median_photoz,mean_mass,mean_flux,mean_flux_err
+    fig.savefig('SFRvsM.png', bbox_inches = 'tight', format='png', dpi=400)
+    
+    return
 
-def OutputStackingCat():
-    print "Output catalog of stacking result"
-    OUTPUT_CAT = 'S2COSMOS850_stacking_yuhsuan.fits'
+def PlotSSFR_fourband():
     
-    object_list = []
-    median_photoz = []
-    mean_mass = []
-    mean_flux = []
-    mean_flux_err = []
+    ### set redshift
+    global z_list, m_list, z, z_range
+    z_list = [ Mask_z(0,0,0.5),Mask_z(0,0.5,1.0),Mask_z(0,1.0,1.5),Mask_z(0,1.5,2.0),Mask_z(0,2.0,100) ]
+    m_list = [ Mask_mass(0,0,10.5),Mask_mass(0,10.5,100) ]
+    z = [0.35,0.8,1.2,1.65,2.4]
+    z_range = ["0 < z "+u"\u2264"+" 0.5","0.5 < z "+u"\u2264"+" 1.0",\
+               "1.0 < z "+u"\u2264"+" 1.5","1.5 < z "+u"\u2264"+" 2.0","z > 2.0"]
     
-    print "stacking..."
-    MASK = ((data[0]['850WIDE']==0)|(data[0]['850WIDE']==4)|(data[0]['LENSING']==1))&(data[0]['24MICRON']==0)&(data[0]['Radio_excess']!=0)
-    object_list,median_photoz,mean_mass,mean_flux,mean_flux_err = AddCat("QG",MASK,object_list,median_photoz,mean_mass,mean_flux,mean_flux_err)
+    PlotSSFR( MaskAllQG(0) & Mask_nonSMG_850(0), 0 )
     
-    MASK = ((data[0]['850WIDE']==0)|(data[0]['850WIDE']==4)|(data[0]['LENSING']==1))&( (data[0]['24MICRON']==1)|(data[0]['Radio_excess']==0) )
-    object_list,median_photoz,mean_mass,mean_flux,mean_flux_err = AddCat("IR-bright QG",MASK,object_list,median_photoz,mean_mass,mean_flux,mean_flux_err)
+    return
+
+def PlotSSFR_oneband():
     
-    column_name_list = ["object","log_mean_mass","median_photoz","mean_flux","mean_flux_err"]
-    column_list = [object_list,mean_mass,median_photoz,mean_flux*u.mJy,mean_flux_err*u.mJy]
-    output_cat = OutputCat(column_name_list, column_list)
+    ### set redshift
+    global z_list, m_list, z, z_range
+    z_list = [ Mask_z(0,0,0.5),Mask_z(0,0.5,1.0),Mask_z(0,1.0,1.5),Mask_z(0,1.5,2.0),Mask_z(0,2.0,2.5),Mask_z(0,2.5,100) ]
+    m_list = [ Mask_mass(0,0,10.5),Mask_mass(0,10.5,100) ]
+    z = [0.35,0.8,1.2,1.7,2.25,2.7]
+    z_range = ["0 < $z$ "  +u"\u2264"+" 0.5",  "0.5 < $z$ "+u"\u2264"+" 1.0",\
+               "1.0 < $z$ "+u"\u2264"+" 1.5",  "1.5 < $z$ "+u"\u2264"+" 2.0",\
+               "2.0 < $z$ "+u"\u2264"+" 2.5",  "$z$ > 2.5"]
     
-    #print output_cat
-    print "output catalog..."
-    output_cat.write(OUTPUT_CAT, overwrite=True)
-    return 
+    PlotSSFR( MaskAllQG_oneband(0) & Mask_nonSMG_850_oneband(0), 1 )
+    
+    return
     
 def PlotSSFR850450():
     plt.figure(figsize=(8,6))
@@ -988,21 +1148,45 @@ def PlotSSFR850450_tick2():
 
 def PlotLensed():
     
+    ###read file
     hdu_list = fits.open("/Users/yuhsuan/Desktop/COSMOS.Ks.original_psf.v5.fits")
     #hdu_list.info()
     image_data = hdu_list[0].data
     wcs = WCS(hdu_list[0].header).celestial
-  
-    x1, y1 = wcs.all_world2pix([[150.1001356, 2.2971499]], 0)[0]
-    imagebox = np.copy(image_data[int(y1)-15:int(y1)+16:1,int(x1)-15:int(x1)+16:1])
+    
+    ###chop the image
+    x_center, y_center = wcs.all_world2pix([[150.1001356, 2.2971499]], 0)[0]
+    #print x_center, y_center
+    y_min, y_max = int(y_center)-15, int(y_center)+16
+    x_min, x_max = int(x_center)-15, int(x_center)+16
+
+    imagebox = np.copy( image_data[y_min:y_max:1,x_min:x_max:1] )
     
     
     fig, ax = plt.subplots()
-    plt.imshow(imagebox, cmap='gray', vmin=-2000, vmax=2500)
-    plt.colorbar()
-    plt.gca().invert_xaxis()
-    circle1 = plt.Circle( (15,15), 7.0, edgecolor="k", facecolor='none' )
+    plt.imshow(imagebox, cmap='gray', vmin=-2200, vmax=2500)
+    #plt.colorbar()
+    plt.gca().invert_yaxis()
+    
+    ###plot QG sample
+    circle1 = plt.Circle( (x_center-x_min,y_center-y_min), 6.6666869, edgecolor="k", facecolor='none' )
     ax.add_artist(circle1)
+    
+    ###plot ALMA sources
+    a1_x, a1_y = wcs.all_world2pix([[150.0998696, 2.2972549]], 0)[0]
+    a2_x, a2_y = wcs.all_world2pix([[150.1001325, 2.2970430]], 0)[0]
+    circle_a1 = plt.Circle( (a1_x-x_min,a1_y-y_min), 3.3333435, edgecolor="pink", facecolor='none' )
+    circle_a2 = plt.Circle( (a2_x-x_min,a2_y-y_min), 3.3333435, edgecolor="pink", facecolor='none' )
+    ax.add_artist(circle_a1)
+    ax.add_artist(circle_a2)
+    plt.text( a1_x-x_min-2.5, a1_y-y_min-5, "AS2COS0005.1", fontsize=12, color="pink" )
+    plt.text( a2_x-x_min-2.5, a2_y-y_min-5, "AS2COS0005.2", fontsize=12, color="pink" )
+    
+    ###plotting scale
+    plt.plot( (1.0,1.0+6.6666869), (1.0,1.0), 'k')
+    plt.text( 1.0+6.6666869*0.07, 1.4, "1 arcsec", fontsize=12, color="k" )
+    
+    fig.savefig('lensed_Ks.png', bbox_inches = 'tight', format='png', dpi=400)
     
     return
 
@@ -1075,11 +1259,12 @@ elif ( SHRESHOLD==2.0     ):  MEAN, SIGMA = -0.130, 1.166
 
 
 IMAGE_MAX, IMAGE_MIN = -10,10
-MASK2 = Mask_M(0) & Mask_photoz(0) & Mask_error(1,0.1,0) & Mask_class_star(0)
-MASK3 = Mask_myclassQG(0)
+
 
 sigma_plot = 1.0
 
+#four-band
+'''
 LIR_WH = [1.4e9*sigma_plot, 6.8e9*sigma_plot/1.3,
           1.6e9*sigma_plot/0.5,8.0e9,
           7.6e9*sigma_plot,3.6e10,
@@ -1125,21 +1310,67 @@ for i in range( len(LIR_errlen_WH) ):
 
 LIR_limitmask_WH = [1,1,1,0,1,0,1,0,1,0,   0,1,0,0,1,0,0,0,1,0]
 LIR_iter = 0
+'''
+
+
+LIR_iter = 0
+
+SNR = [ 6.3, 8.2, 3.5, 5.0, 0.1,
+        3.8,
+        -0.4,1.4, 0.4, 2.2,
+        -0.5,3.4, 1.3, 2.3,
+        0.9, 3.2, -0.3,1.1,
+        8.6,
+        2.0, 1.6, 2.8, 2.7,
+        2.0, 5.1, 2.5, 6.6,
+        2.4, 2.4, 0.5, 1.8 ]
+
+LIR_limitmask_WH = []
+
+for i in range( len(SNR) ):
+    if ( SNR[i] < 2.0 ): LIR_limitmask_WH.append(1)
+    else: LIR_limitmask_WH.append(0)
+
+LIR_WH = [ 1.0393994e+10, 1.1675221e+11, 6.7596636e+10, 1.3854581e+11, 1.6799213e+09,
+           6.7196851e+09,
+           2.1875100e+09, 6.8162994e+09, 1.5864483e+09, 8.0078843e+09,
+           5.6807255e+09, 3.5750400e+10, 2.0815037e+10, 3.7364623e+10,
+           2.9396089e+10, 1.2770901e+11, 9.9575061e+10, 6.0067898e+10,
+           1.1661365e+11,
+           6.8301539e+10, 2.0047333e+10, 1.0498772e+11, 3.0109917e+10,
+           2.1107203e+11, 2.2635037e+11, 8.0875008e+11, 1.0234224e+12,
+           1.2881062e+12, 3.8623161e+11, 2.8080578e+11, 3.0794453e+11,
+           1.0393994e+10, 8.0367031e+11, 6.6293680e+11, 1.0435518e+12, 1.9249000e+11,
+           8.5229484e+09, 7.6447669e+11 ]
+'''
+for i in range( len(SNR) ):
+    if ( SNR[i] < 2.0 )&( SNR[i] > 0.0 ):
+        LIR_WH[i] *= sigma_plot
+        LIR_WH[i] /= SNR[i]
+'''
+
+LIR_errlen_WH = []
+
+for i in range( len(SNR) ):
+    if ( SNR[i] >= 2.0 ): LIR_errlen_WH.append( LIR_WH[i]*sigma_plot/SNR[i] )
+    else: LIR_errlen_WH.append( -99.9 )
 
 
 
 
 #PrintStacking()
+#PrintStackingOneBand()
+#Stack_test()
 
-#PlotSSFR()
+#PlotSSFR_fourband()
+PlotSSFR_oneband()
 
 #PlotSSFR850450()
 #PlotSSFR850450_tick()
 #PlotSSFR850450_tick2()
 
-#OutputStackingCat()
 
-PlotLensed()
+#PlotLensed()
 
 
 ###### 450
@@ -1162,7 +1393,8 @@ elif ( SHRESHOLD==2.0     ):  MEAN, SIGMA = -0.290, 1.931
 CENTER_RA,CENTER_DEC = '10h00m25.0s', '2d24m22.0s'
 RADIUS               = 0.2*u.degree
 
-#PrintStackingSimple()
+#PrintStacking450()
+#PrintStacking450OneBand()
 
 time2 = time.time()
 print 'done! time :', time2-time1 , 'sec'
